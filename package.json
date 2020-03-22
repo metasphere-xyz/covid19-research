@@ -1,0 +1,23 @@
+{
+  "name": "metasphere-hackcorona",
+  "version": "0.1.0",
+  "description": "metasphere MPV for the HackCorona challenge",
+  "main": "dist/main.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/metasphere-xyz/hackcorona.git"
+  },
+  "keywords": [
+    "metasphere",
+    "HackCorona"
+  ],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/metasphere-xyz/hackcorona/issues"
+  },
+  "homepage": "https://github.com/metasphere-xyz/hackcorona#readme"
+}
