@@ -4,6 +4,7 @@
   "description": "metasphere MPV for the HackCorona challenge",
   "main": "dist/main.js",
   "scripts": {
+    "build": "webpack",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
@@ -19,5 +20,9 @@
   "bugs": {
     "url": "https://github.com/metasphere-xyz/hackcorona/issues"
   },
-  "homepage": "https://github.com/metasphere-xyz/hackcorona#readme"
+  "homepage": "https://github.com/metasphere-xyz/hackcorona#readme",
+  "devDependencies": {
+    "webpack": "^4.42.0",
+    "webpack-cli": "^3.3.11"
+  }
 }
