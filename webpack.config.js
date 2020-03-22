@@ -21,6 +21,10 @@ module.exports = {
     ]
   },
   resolve: {
+    alias: {
+      '@components': path.resolve(__dirname, 'src/components'),
+      '@routes': path.resolve(__dirname, 'src/routes')
+    },
     extensions: [
       '.js',
       '.vue'
@@ -29,6 +33,7 @@ module.exports = {
   plugins: [
     new VueLoaderPlugin(),
     new HtmlWebpackPlugin({
+      inject: false,
       template: require('html-webpack-template'),
       title: 'metasphere - HackCorona',
       lang: 'en',
