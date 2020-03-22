@@ -1,6 +1,7 @@
 const path = require('path')
 const HtmlWebpackPlugin = require('html-webpack-plugin')
 const VueLoaderPlugin = require('vue-loader/lib/plugin')
+const CopyPlugin = require('copy-webpack-plugin')
 
 // you can override this with --mode option
 const mode = 'development'
@@ -57,6 +58,12 @@ module.exports = {
       title: 'metasphere - HackCorona',
       lang: 'en',
       appMountId: 'app'
-    })
+    }),
+    new CopyPlugin([
+      {
+        from: 'source-data.csv',
+        context: 'docs'
+      }
+    ])
   ]
 }

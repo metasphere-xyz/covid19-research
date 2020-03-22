@@ -13,11 +13,27 @@
         :height="svg.height"
       />
     </div>
+    <b-loading
+      :active.sync="isLoadingData"
+      :is-full-page="false"
+      :can-cancel="false"
+    />
   </div>
 </template>
 
 <script>
 import * as d3 from 'd3'
+
+const colorList = [
+  'blue',
+  'red',
+  'green',
+  'coral',
+  'cornflowerblue',
+  'crimson',
+  'cyan',
+  'drakblue'
+]
 
 export default {
   name: 'Example',
@@ -29,6 +45,8 @@ export default {
   },
   data () {
     return {
+      // whether data loading is going on
+      isLoadingData: true,
       // configured on created
       voronoi: {
         // array of two dimensional arrays.
@@ -36,6 +54,7 @@ export default {
         points: [],
         diagram: null
       },
+      cluster: [],
       // configured on mounted
       svg: {
         width: 300,
@@ -47,12 +66,41 @@ export default {
     // at created elements are not available.
     this.resetPoints()
     this.calculateVoronoi()
+    // experimentally fetches the data
+    this.promiseReady = fetch('./source-data.csv')
+      .then(response => {
+        return response.text()
+          .then(text => {
+            if (process.env.NODE_ENV !== 'production') {
+              console.log(`loaded: ${text.length}`)
+            }
+            this.cluster = d3.csvParse(text, d => {
+              return {
+                ...d,
+                x: +d.x,
+                y: +d.y,
+                labelId: +(d.labels.slice(2)) // skips 'C-'
+              }
+            })
+            if (process.env.NODE_ENV !== 'production') {
+              console.log(`parsed: ${this.cluster.length}`)
+              console.log(`x: ${d3.extent(this.cluster, c => c.x)}`)
+              console.log(`y: ${d3.extent(this.cluster, c => c.y)}`)
+              console.log(`labelId: ${d3.extent(this.cluster, c => c.labelId)}`)
+            }
+            // at this point the Vue instance might not be ready
+            this.isLoadingData = false
+            this.renderVoronoi()
+          })
+      })
   },
   mounted () {
     const container = this.$refs['svg-container']
     this.svg.width = container.clientWidth
     this.svg.height = container.clientHeight
-    this.renderVoronoi()
+    /*
+    this.promiseReady
+      .then(() => this.renderVoronoi()) */
   },
   methods: {
     resetPoints () {
@@ -81,23 +129,28 @@ export default {
       }
       const svg = d3.select(this.$refs['svg'])
       const xScale = d3.scaleLinear()
-        .domain([0, 1])
+        .domain([-25, 25])
         .range([0, this.svg.width])
       const yScale = d3.scaleLinear()
-        .domain([0, 1])
+        .domain([-25, 25])
         .range([0, this.svg.height])
+      const colorScale = d3.scaleLinear()
+        .domain(d3.extent(this.cluster, c => c.labelId))
+        .range([0, 1])
       // removes the contents
       svg.select('g')
         .remove()
       // renders new contents
       const contents = svg.append('g')
       contents.selectAll('circle')
-        .data(this.voronoi.points)
+        // .data(this.voronoi.points)
+        .data(this.cluster)
         .join('circle')
           .attr('r', 3)
-          .attr('cx', d => xScale(d[0]))
-          .attr('cy', d => yScale(d[1]))
-          .attr('fill', 'black')
+          .attr('cx', d => xScale(d.x))
+          .attr('cy', d => yScale(d.y))
+          .attr('fill', d => d3.interpolateTurbo(colorScale(d.labelId)))
+      /*
       const boundaries = this.voronoi.diagram.polygons()
         .map(polygon => this.polygonToPath(polygon, xScale, yScale))
       contents.selectAll('path')
@@ -106,7 +159,7 @@ export default {
           .attr('d', d => d.toString())
           .attr('stroke-width', 1)
           .attr('stroke', 'black')
-          .attr('fill', 'none')
+          .attr('fill', 'none') */
       if (process.env.NODE_ENV !== 'production'){
         console.log('finish renderVoronoi')
       }
@@ -132,6 +185,7 @@ export default {
 $true-navbar-height: $navbar-height + ($navbar-padding-vertical / 2);
 
 .example {
+  position: relative;
   width: 100%;
   height: calc(100vh - #{$true-navbar-height});
 
