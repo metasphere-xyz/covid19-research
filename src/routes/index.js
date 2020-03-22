@@ -10,11 +10,16 @@ import VueRouter from 'vue-router'
 Vue.use(VueRouter)
 
 import Intro from '@components/intro'
+import Example from '@components/example'
 
 const routes = [
   {
     path: '/',
     component: Intro
+  },
+  {
+    path: '/example',
+    component: Example
   }
 ]
 

@@ -2,7 +2,15 @@
   <div>
     <b-navbar type="is-black">
       <template slot="brand">
-        <p style="font-size: 2.5rem;">metasphere - HackCorona</p>
+        <p style="font-size: 2.5rem;">metasphere</p>
+      </template>
+      <template slot="start">
+        <b-navbar-item
+          tag="router-link"
+          to="/example"
+        >
+          Example
+        </b-navbar-item>
       </template>
     </b-navbar>
     <div class="container">
