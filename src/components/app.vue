@@ -13,7 +13,7 @@
         </b-navbar-item>
       </template>
     </b-navbar>
-    <div class="container">
+    <div>
       <router-view />
     </div>
   </div>
