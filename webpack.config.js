@@ -7,6 +7,10 @@ const mode = 'development'
 
 module.exports = {
   mode,
+  devServer: {
+    contentBase: path.resolve(__dirname, 'dist'),
+    port: 9000
+  },
   entry: './src/index.js',
   output: {
     filename: 'main.js',
