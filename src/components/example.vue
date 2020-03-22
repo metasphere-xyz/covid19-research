@@ -1,17 +1,24 @@
 <template>
   <div class="example">
-    <div
-      ref="svg-container"
-      class="svg-container"
-    >
-      <svg
-        ref="svg"
-        xmlns="http://www.w3.org/2000/svg"
-        xmlns:xlink="http://www.w3.org/1999/xlink"
-        version="1.1"
-        :width="svg.width"
-        :height="svg.height"
-      />
+    <div class="columns">
+      <div class="column is-two-thirds">
+        <div
+          ref="svg-container"
+          class="svg-container"
+        >
+          <svg
+            ref="svg"
+            xmlns="http://www.w3.org/2000/svg"
+            xmlns:xlink="http://www.w3.org/1999/xlink"
+            version="1.1"
+            :width="svg.width"
+            :height="svg.height"
+          />
+        </div>
+      </div>
+      <div class="column">
+        <paper :paper="currentPaper" />
+      </div>
     </div>
     <b-loading
       :active.sync="isLoadingData"
@@ -23,6 +30,8 @@
 
 <script>
 import * as d3 from 'd3'
+
+import Paper from '@components/paper'
 
 const colorList = [
   'blue',
@@ -37,6 +46,9 @@ const colorList = [
 
 export default {
   name: 'Example',
+  components: {
+    Paper
+  },
   props: {
     numPoints: {
       type: Number,
@@ -55,6 +67,7 @@ export default {
         diagram: null
       },
       cluster: [],
+      currentPaper: null,
       // configured on mounted
       svg: {
         width: 300,
@@ -79,6 +92,7 @@ export default {
                 ...d,
                 x: +d.x,
                 y: +d.y,
+                title: d.titles,
                 labelId: +(d.labels.slice(2)) // skips 'C-'
               }
             })
@@ -150,6 +164,12 @@ export default {
           .attr('cx', d => xScale(d.x))
           .attr('cy', d => yScale(d.y))
           .attr('fill', d => d3.interpolateTurbo(colorScale(d.labelId)))
+          .on('pointerover', d => {
+            if (process.env.NODE_ENV !== 'production') {
+              console.log(`pointerover: ${d.paper_id}`)
+            }
+            this.currentPaper = d
+          })
       /*
       const boundaries = this.voronoi.diagram.polygons()
         .map(polygon => this.polygonToPath(polygon, xScale, yScale))
@@ -188,6 +208,14 @@ $true-navbar-height: $navbar-height + ($navbar-padding-vertical / 2);
   position: relative;
   width: 100%;
   height: calc(100vh - #{$true-navbar-height});
+
+  .columns {
+    height: 100%;
+  }
+
+  .column {
+    height: 100%;
+  }
 
   .svg-container {
     width: 100%;
