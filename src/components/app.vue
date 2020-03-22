@@ -1,7 +1,13 @@
 <template>
   <div>
-    <h1>metasphere - HackCorona</h1>
-    <router-view />
+    <b-navbar type="is-black">
+      <template slot="brand">
+        <p style="font-size: 2.5rem;">metasphere - HackCorona</p>
+      </template>
+    </b-navbar>
+    <div class="container">
+      <router-view />
+    </div>
   </div>
 </template>
 
