@@ -1,6 +1,6 @@
 <template>
   <div class="example">
-    <div class="columns">
+    <div class="columns is-gapless">
       <div class="column is-two-thirds">
         <div
           ref="svg-container"
@@ -21,7 +21,7 @@
           />
         </div>
       </div>
-      <div class="column">
+      <div class="column paper-column">
         <paper :paper="currentPaper" />
       </div>
     </div>
@@ -60,6 +60,10 @@ export default {
     numPoints: {
       type: Number,
       default: 40
+    },
+    numReducedDots: {
+      type: Number,
+      default: 2000
     },
     zoomFactor: {
       type: Number,
@@ -129,7 +133,8 @@ export default {
               console.log(`y: ${d3.extent(this.cluster, c => c.y)}`)
               console.log(`labelId: ${d3.extent(this.cluster, c => c.labelId)}`)
             }
-            this.reducedCluster = arrays.chooseRandomly(this.cluster, 1000)
+            this.reducedCluster =
+              arrays.chooseRandomly(this.cluster, this.numReducedDots)
             // at this point the Vue instance might not be ready
             this.isLoadingData = false
             this.renderVoronoi(this.cluster)
@@ -235,6 +240,7 @@ export default {
       this.drag.isActive = true
       this.drag.lastX = clientX
       this.drag.lastY = clientY
+      event.preventDefault()
     },
     onPointerMove (event) {
       if (process.env.NODE_ENV !== 'production') {
@@ -249,14 +255,15 @@ export default {
       this.drag.lastX = clientX
       this.drag.lastY = clientY
       this.pan(-normalDX, -normalDY) // moves opposite
+      event.preventDefault()
     },
     onPointerUp (event) {
       if (process.env.NODE_ENV !== 'production') {
         console.log('onPointerUp', event)
       }
-      const container = this.$refs['svg-container']
-      const { target, pointerId } = event
-      // container.releasePointerCapture(pointerId)
+      if (this.drag.isActive) {
+        event.preventDefault()
+      }
       this.drag.isActive = false
     },
     onPointerCancel (event) {
@@ -331,6 +338,12 @@ $true-navbar-height: $navbar-height + ($navbar-padding-vertical / 2);
 
   .column {
     height: 100%;
+
+    &.paper-column {
+      padding: 0.25rem !important;
+      overflow-y: auto;
+      box-shadow: -1px 0px 3px black;
+    }
   }
 
   .svg-container {
