@@ -1,6 +1,4 @@
-# metasphere - HackCorona
-
-The repository of [the metasphere MVP](https://metasphere-xyz.github.io/hackcorona/) for the HackCorona challenge.
+# metasphere - COVID-19 Research
 
 ## Usage Scenarios
 
