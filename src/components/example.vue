@@ -5,6 +5,10 @@
         <div
           ref="svg-container"
           class="svg-container"
+          @pointerdown="onPointerDown"
+          @pointermove="onPointerMove"
+          @pointerup="onPointerUp"
+          @pointercancel="onPointerCancel"
           @wheel.prevent="onWheel"
         >
           <svg
@@ -83,7 +87,11 @@ export default {
         height: 300
       },
       domainX: [-25, 25],
-      domainY: [-25, 25]
+      domainY: [-25, 25],
+      drag: {
+        lastX: 0,
+        lastY: 0
+      }
     }
   },
   computed: {
@@ -216,6 +224,54 @@ export default {
       })
       path.closePath()
       return path
+    },
+    onPointerDown (event) {
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('onPointerDown', event)
+      }
+      const container = this.$refs['svg-container']
+      const { target, pointerId, clientX, clientY } = event
+      container.setPointerCapture(pointerId)
+      this.drag.isActive = true
+      this.drag.lastX = clientX
+      this.drag.lastY = clientY
+    },
+    onPointerMove (event) {
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('onPointerMove', event)
+      }
+      if (!this.drag.isActive) {
+        return
+      }
+      const { clientX, clientY } = event
+      const normalDX = (clientX - this.drag.lastX) / this.svg.width
+      const normalDY = (clientY - this.drag.lastY) / this.svg.height
+      this.drag.lastX = clientX
+      this.drag.lastY = clientY
+      this.pan(-normalDX, -normalDY) // moves opposite
+    },
+    onPointerUp (event) {
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('onPointerUp', event)
+      }
+      const container = this.$refs['svg-container']
+      const { target, pointerId } = event
+      // container.releasePointerCapture(pointerId)
+      this.drag.isActive = false
+    },
+    onPointerCancel (event) {
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('onPointerCancel', event)
+      }
+      this.drag.isActive = false
+    },
+    pan (normalDX, normalDY) {
+      const dX = normalDX * this.domainWidth
+      const dY = normalDY * this.domainHeight
+      this.domainX = this.domainX.map(x => x + dX)
+      this.domainY = this.domainY.map(y => y + dY)
+      this.renderVoronoi(this.reducedCluster)
+      this.delayedRender()
     },
     onWheel (event) {
       const container = this.$refs['svg-container']
