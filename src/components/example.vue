@@ -51,6 +51,13 @@ const colorList = [
   'drakblue'
 ]
 
+/**
+ * Example cluster and paper information.
+ *
+ * @namespace Example
+ *
+ * @module: components
+ */
 export default {
   name: 'Example',
   components: {
@@ -74,28 +81,28 @@ export default {
     return {
       // whether data loading is going on
       isLoadingData: true,
-      // configured on created
-      voronoi: {
-        // array of two dimensional arrays.
-        // [[x0, y0], [x1, y1], ...]
-        points: [],
-        diagram: null
-      },
-      cluster: [],
-      reducedCluster: [],
-      currentPaper: null,
-      delayedRender: null,
+      // canvas size.
       // configured on mounted
       svg: {
         width: 300,
         height: 300
       },
+      // clusters and paper
+      clusters: [],
+      reducedClusters: [],
+      currentPaper: null,
+      // visible region
       domainX: [-25, 25],
       domainY: [-25, 25],
+      // manages a drag event
       drag: {
+        isActive: false,
         lastX: 0,
         lastY: 0
-      }
+      },
+      // rendering function that delays.
+      // rendering is postponed every time it is called.
+      delayRenderClusters: null
     }
   },
   computed: {
@@ -107,10 +114,6 @@ export default {
     }
   },
   created () {
-    // at created elements are not available.
-    this.resetPoints()
-    this.calculateVoronoi()
-    // experimentally fetches the data
     this.promiseReady = fetch('./source-data.csv')
       .then(response => {
         return response.text()
@@ -118,26 +121,26 @@ export default {
             if (process.env.NODE_ENV !== 'production') {
               console.log(`loaded: ${text.length}`)
             }
-            this.cluster = d3.csvParse(text, d => {
+            this.clusters = d3.csvParse(text, d => {
               return {
                 ...d,
                 x: +d.x,
                 y: +d.y,
                 title: d.titles,
-                labelId: +(d.labels.slice(2)) // skips 'C-'
+                labelId: +(d.labels.slice(2)) // omits 'C-'
               }
             })
             if (process.env.NODE_ENV !== 'production') {
-              console.log(`parsed: ${this.cluster.length}`)
-              console.log(`x: ${d3.extent(this.cluster, c => c.x)}`)
-              console.log(`y: ${d3.extent(this.cluster, c => c.y)}`)
-              console.log(`labelId: ${d3.extent(this.cluster, c => c.labelId)}`)
+              console.log(`parsed: ${this.clusters.length}`)
+              console.log(`x: ${d3.extent(this.clusters, c => c.x)}`)
+              console.log(`y: ${d3.extent(this.clusters, c => c.y)}`)
+              console.log(`labelId: ${d3.extent(this.clusters, c => c.labelId)}`)
             }
-            this.reducedCluster =
-              arrays.chooseRandomly(this.cluster, this.numReducedDots)
+            this.reducedClusters =
+              arrays.chooseRandomly(this.clusters, this.numReducedDots)
             // at this point the Vue instance might not be ready
             this.isLoadingData = false
-            this.renderVoronoi(this.cluster)
+            this.renderClusters(this.clusters)
           })
       })
   },
@@ -145,37 +148,14 @@ export default {
     const container = this.$refs['svg-container']
     this.svg.width = container.clientWidth
     this.svg.height = container.clientHeight
-    /*
-    this.promiseReady
-      .then(() => this.renderVoronoi()) */
-    this.delayedRender = debounce(() => {
-      this.renderVoronoi(this.cluster)
+    this.delayRenderClusters = debounce(() => {
+      this.renderClusters(this.clusters)
     }, 250)
   },
   methods: {
-    resetPoints () {
-      this.voronoi.points = []
-      for (let i = 0; i < this.numPoints; ++i) {
-        this.voronoi.points.push([
-          Math.random(), // x
-          Math.random() // y
-        ])
-      }
-    },
-    calculateVoronoi () {
+    renderClusters (clusters) {
       if (process.env.NODE_ENV !== 'production') {
-        console.log('start calculateVoronoi', this.voronoi.points)
-      }
-      const voronoi =d3.voronoi()
-        .extent([[0, 0], [1, 1]])
-      this.voronoi.diagram = voronoi(this.voronoi.points)
-      if (process.env.NODE_ENV !== 'production') {
-        console.log('finish calculateVoronoi', this.voronoi.diagram)
-      }
-    },
-    renderVoronoi (cluster) {
-      if (process.env.NODE_ENV !== 'production') {
-        console.log('start renderVoronoi', this.voronoi.diagram)
+        console.log('start renderClusters')
       }
       const svg = d3.select(this.$refs['svg'])
       const xScale = d3.scaleLinear()
@@ -185,7 +165,7 @@ export default {
         .domain(this.domainY)
         .range([0, this.svg.height])
       const colorScale = d3.scaleLinear()
-        .domain(d3.extent(this.cluster, c => c.labelId))
+        .domain(d3.extent(this.clusters, c => c.labelId))
         .range([0, 1])
       // removes the contents
       svg.select('g')
@@ -193,8 +173,7 @@ export default {
       // renders new contents
       const contents = svg.append('g')
       contents.selectAll('circle')
-        // .data(this.voronoi.points)
-        .data(cluster)
+        .data(clusters)
         .join('circle')
           .attr('r', 3)
           .attr('cx', d => xScale(d.x))
@@ -206,29 +185,9 @@ export default {
             }
             this.currentPaper = d
           })
-      /*
-      const boundaries = this.voronoi.diagram.polygons()
-        .map(polygon => this.polygonToPath(polygon, xScale, yScale))
-      contents.selectAll('path')
-        .data(boundaries)
-        .join('path')
-          .attr('d', d => d.toString())
-          .attr('stroke-width', 1)
-          .attr('stroke', 'black')
-          .attr('fill', 'none') */
       if (process.env.NODE_ENV !== 'production'){
-        console.log('finish renderVoronoi')
+        console.log('finish renderClusters')
       }
-    },
-    polygonToPath (polygon, xScale, yScale) {
-      const path = d3.path()
-      const [x0, y0] = polygon[0]
-      path.moveTo(xScale(x0), yScale(y0))
-      polygon.slice(1).forEach(([x, y]) => {
-        path.lineTo(xScale(x), yScale(y))
-      })
-      path.closePath()
-      return path
     },
     onPointerDown (event) {
       if (process.env.NODE_ENV !== 'production') {
@@ -243,9 +202,6 @@ export default {
       event.preventDefault()
     },
     onPointerMove (event) {
-      if (process.env.NODE_ENV !== 'production') {
-        console.log('onPointerMove', event)
-      }
       if (!this.drag.isActive) {
         return
       }
@@ -277,8 +233,8 @@ export default {
       const dY = normalDY * this.domainHeight
       this.domainX = this.domainX.map(x => x + dX)
       this.domainY = this.domainY.map(y => y + dY)
-      this.renderVoronoi(this.reducedCluster)
-      this.delayedRender()
+      this.renderClusters(this.reducedClusters)
+      this.delayRenderClusters()
     },
     onWheel (event) {
       const container = this.$refs['svg-container']
@@ -294,8 +250,8 @@ export default {
       } else {
         this.zoomOut(normalX, normalY)
       }
-      this.renderVoronoi(this.reducedCluster)
-      this.delayedRender()
+      this.renderClusters(this.reducedClusters)
+      this.delayRenderClusters()
     },
     zoomIn (normalX, normalY) {
       this.zoom(normalX, normalY, this.zoomFactor)
