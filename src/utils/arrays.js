@@ -20,7 +20,7 @@
 export function chooseRandomly (xs, n) {
   const ys = [...xs]
   for (let i = 0; i < n; ++i) {
-    const chosen = Math.floor(Math.random() * (n - i))
+    const chosen = Math.floor(Math.random() * (xs.length - i))
     const tmp = ys[i]
     ys[i] = ys[chosen]
     ys[chosen] = tmp
