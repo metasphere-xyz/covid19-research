@@ -172,18 +172,27 @@ export default {
         .remove()
       // renders new contents
       const contents = svg.append('g')
+      const vm = this
       contents.selectAll('circle')
         .data(clusters)
         .join('circle')
+          .attr('class', 'paper-dot')
           .attr('r', 3)
           .attr('cx', d => xScale(d.x))
           .attr('cy', d => yScale(d.y))
           .attr('fill', d => d3.interpolateTurbo(colorScale(d.labelId)))
-          .on('pointerover', d => {
+          .on('pointerover', function (d) {
             if (process.env.NODE_ENV !== 'production') {
               console.log(`pointerover: ${d.paper_id}`)
             }
-            this.currentPaper = d
+            vm.currentPaper = d
+            this.classList.add('highlighted')
+          })
+          .on('pointerout', function (d) {
+            if (process.env.NODE_ENV !== 'production') {
+              console.log(`pointerout: ${d.paper_id}`)
+            }
+            this.classList.remove('highlighted')
           })
       if (process.env.NODE_ENV !== 'production'){
         console.log('finish renderClusters')
@@ -277,7 +286,7 @@ export default {
 }
 </script>
 
-<style lang="scss" scoped>
+<style lang="scss">
 @import 'bulma/bulma.sass';
 
 /* true navbar height */
@@ -305,6 +314,16 @@ $true-navbar-height: $navbar-height + ($navbar-padding-vertical / 2);
   .svg-container {
     width: 100%;
     height: 100%;
+  }
+}
+
+circle {
+  &.paper-dot {
+    &.highlighted {
+      stroke: black;
+      stroke-opacity: 0.7;
+      stroke-width: 3;
+    }
   }
 }
 </style>
