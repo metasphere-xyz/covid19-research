@@ -1,9 +1,3 @@
-# of node
-/node_modules
-
-# generated files
-/dist
-
 # of editors
 *.swp
 *~
