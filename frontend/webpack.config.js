@@ -63,7 +63,7 @@ module.exports = {
     new CopyPlugin([
       {
         from: 'source-data.csv',
-        context: 'docs'
+        context: '../docs'
       }
     ])
   ]
