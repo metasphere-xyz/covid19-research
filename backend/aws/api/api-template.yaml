@@ -1,0 +1,147 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'REST API for metasphere'
+
+Parameters:
+  ArticleBucketName:
+    Description: 'Name of the article bucket'
+    Type: 'String'
+  ProjectTagValue:
+    Description: 'Value to be associated with a "project" tag. "covid-19-research" by default'
+    Type: 'String'
+    Default: 'covid-19-research'
+
+Resources:
+  MetasphereApi:
+    Type: 'AWS::ApiGateway::RestApi'
+    Properties:
+      Name: !Ref AWS::StackName
+      Description: 'REST API for metashpere'
+      Tags:
+        - Key: 'project'
+          Value: !Ref ProjectTagValue
+
+  # role for article bucket S3 access
+  ArticleBucketAccessRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: 'Allow'
+            Principal:
+              Service: 'apigateway.amazonaws.com'
+            Action: 'sts:AssumeRole'
+      Policies:
+        - PolicyName: 'ArticleBucketAccess'
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: 'Allow'
+                Action:
+                  - 's3:GetObject'
+                Resource: !Sub 'arn:aws:s3:::${ArticleBucketName}/*'
+
+  # /article
+  ArticleResource:
+    Type: 'AWS::ApiGateway::Resource'
+    Properties:
+      RestApiId: !Ref MetasphereApi
+      ParentId: !GetAtt MetasphereApi.RootResourceId
+      PathPart: 'article'
+
+  # /article/{hash}
+  ArticleHashResource:
+    Type: 'AWS::ApiGateway::Resource'
+    Properties:
+      RestApiId: !Ref MetasphereApi
+      ParentId: !Ref ArticleResource
+      PathPart: '{hash}'
+  # - OPTIONS (for CORS support)
+  ArticleHashOPTIONS:
+    Type: 'AWS::ApiGateway::Method'
+    Properties:
+      OperationName: 'Preflight for /article/{hash}'
+      RestApiId: !Ref MetasphereApi
+      ResourceId: !Ref ArticleHashResource
+      HttpMethod: 'OPTIONS'
+      AuthorizationType: 'NONE'
+      MethodResponses:
+        - StatusCode: 200
+          ResponseModels:
+            application/json: 'Empty'
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: false
+            method.response.header.Access-Control-Allow-Methods: false
+            method.response.header.Access-Control-Allow-Origin: false
+      Integration:
+        Type: 'MOCK'
+        PassthroughBehavior: 'WHEN_NO_MATCH'
+        RequestTemplates:
+          application/json: >
+            { "statusCode": 200 }
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type'"
+              method.response.header.Access-Control-Allow-Methods: "'OPTIONS,GET'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: '{}'
+  # - GET
+  ArticleHashGET:
+    Type: 'AWS::ApiGateway::Method'
+    Properties:
+      OperationName: 'Gets an article'
+      RestApiId: !Ref MetasphereApi
+      ResourceId: !Ref ArticleHashResource
+      HttpMethod: 'GET'
+      AuthorizationType: 'NONE'
+      RequestParameters:
+        method.request.path.hash: true
+      MethodResponses:
+        - StatusCode: 200
+          ResponseModels:
+            application/json: 'Empty'
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: false
+            method.response.header.Access-Control-Allow-Methods: false
+            method.response.header.Access-Control-Allow-Origin: false
+        - StatusCode: 400
+        - StatusCode: 500
+      Integration:
+        Type: 'AWS'
+        PassthroughBehavior: 'WHEN_NO_MATCH'
+        IntegrationHttpMethod: 'GET'
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:s3:path/${ArticleBucketName}/json/{hash}.json'
+        Credentials: !GetAtt ArticleBucketAccessRole.Arn
+        RequestParameters:
+          integration.request.path.hash: 'method.request.path.hash'
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type'"
+              method.response.header.Access-Control-Allow-Methods: "'OPTIONS,GET'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+          - StatusCode: 400
+            SelectionPattern: '4\d{2}'
+            ResponseTemplates:
+              application/json: |
+                {
+                  "statusCode": 400,
+                  "message": "article is not available: hash=$input.params('hash')"
+                }
+          - StatusCode: 500
+            SelectionPattern: '5\d{2}'
+            ResponseTemplates:
+              application/json: |
+                {
+                  "statusCode": 500,
+                  "message": "internal server error: hash=$input.params('hash')"
+                }
+
+Outputs:
+  MetasphereApiId:
+    Description: 'ID of the REST API'
+    Value: !Ref MetasphereApi
+    Export:
+      Name: !Sub '${AWS::StackName}-id'

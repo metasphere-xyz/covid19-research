@@ -1,0 +1,30 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Article bucket for metasphere'
+
+Parameters:
+  ProjectTagValue:
+    Description: 'Value to be associated with a "project" tag. "covid-19-research" by default'
+    Type: 'String'
+    Default: 'covid-19-research'
+
+Resources:
+  ArticleBucket:
+    Type: 'AWS::S3::Bucket'
+    Properties:
+      # BucketName is omitted to give a unique name.
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: 'project'
+          Value: !Ref ProjectTagValue
+
+Outputs:
+  ArticleBucketName:
+    Description: 'Name of the article bucket'
+    Value: !Ref ArticleBucket
+  ArticleBucketArn:
+    Description: 'ARN of the article bucket'
+    Value: !GetAtt ArticleBucket.Arn
