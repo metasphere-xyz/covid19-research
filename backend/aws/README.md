@@ -65,6 +65,24 @@ Since we need a globally unique bucket name, I recommend you to append a random 
     ARTICLE_BUCKET=covid-19-article-bucket-`openssl rand -hex 4`
     ```
 
+### Preparing Python virtual environment
+
+Python scripts for Lambda functions may need to import additional packages.
+To include additional packages in a Lambda function, those packages need to be listed in a `requirements.txt` file.
+The easiest way to list packages is to run `pip freeze`.
+
+```
+pip freeze > requirements.txt
+```
+
+However it lists all of packages globally installed.
+To list only packages necessary for a Lambda function, it is recommended to make a virtual environment dedicated to the Lambda function.
+
+```
+python -m venv ./venv
+. ./venv/bin/activate
+```
+
 ### Creating an article bucket
 
 1. Build a SAM template [`store/article-bucket.yaml`](store/article-bucket.yaml).
@@ -76,13 +94,13 @@ Since we need a globally unique bucket name, I recommend you to append a random 
 2. Package a SAM template [`store/article-bucket.yaml`](store/article-bucket.yaml).
 
     ```
-    sam package --template-file store/article-bucket.yaml --output-template-file store/article-bucket-packaged.yaml --s3-bucket $TEMPLATE_BUCKET
+    sam package --template-file store/build/template.yaml --output-template-file store/article-bucket-packaged.yaml --s3-bucket $TEMPLATE_BUCKET
     ```
 
 3. Deploy a CloudFormation stack by [`store/article-bucket.yaml`](store/article-bucket.yaml).
 
     ```
-    aws cloudformation deploy --template-file store/article-bucket-packaged.yaml --stack-name covid-19-article-bucket-devel --parameter-overrides ArticleBucketName=$ARTICLE_BUCKET --capabilities CAPABILITY_IAM
+    aws cloudformation deploy --template-file store/article-bucket-packaged.yaml --stack-name covid-19-article-bucket-devel --parameter-overrides ArticleBucketName=$ARTICLE_BUCKET MainTableArn=$MAIN_TABLE_ARN --capabilities CAPABILITY_IAM
     ```
 
 4. A new empty bucket and Lambda functions will be created.
