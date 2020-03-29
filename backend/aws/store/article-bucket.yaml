@@ -10,6 +10,17 @@ Parameters:
     Description: 'Value to be associated with a "project" tag. "covid-19-research" by default'
     Type: 'String'
     Default: 'covid-19-research'
+  RegisterArticleLogLevel:
+    Description: 'Log level of the register article function. "INFO" by default'
+    Type: 'String'
+    AllowedValues:
+      - 'NOTSET'
+      - 'DEBUG'
+      - 'INFO'
+      - 'WARNING'
+      - 'ERROR'
+      - 'CRITICAL'
+    Default: 'INFO'
 
 Resources:
   ArticleBucket:
@@ -55,6 +66,11 @@ Resources:
                     Value: 'json/'
                   - Name: 'suffix'
                     Value: '.json'
+      Environment:
+        Variables:
+          LAMBDA_LOG_LEVEL: !Ref RegisterArticleLogLevel
+      Tags:
+        project: !Ref ProjectTagValue
 
 Outputs:
   ArticleBucketName:
