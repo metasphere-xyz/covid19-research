@@ -29,6 +29,27 @@ You need the following software installed,
     - The command `sed 's/^"//; s/"$//'` removes quotation (`'`).
     - The bucket name will be stored in `TEMPLATE_BUCKET`.
 
+## Preparing a main table
+
+1. Deploy a CloudFormation stack by [`store/main-table.yaml`](store/main-table.yaml)
+
+    ```
+    aws cloudformation deploy --template-file store/main-table.yaml --stack-name covid-19-main-table-devel
+    ```
+
+2. A new empty DynamoDB table will be created.
+
+3. Remember the ARN of the main table.
+
+    ```
+    MAIN_TABLE_ARN=`aws --query "Stacks[0].Outputs[?OutputKey=='MainTableArn']|[0].OutputValue" cloudformation describe-stacks --stack-name covid-19-main-table-devel | sed 's/^"//; s/"$//'`
+    ```
+
+    **Details**
+    - The query `Stacks[0].Outputs[?OutputKey=='MainTableArn']|[0].OutputValue` extracts the `MainTableArn` output value of the stack.
+    - The command `sed 's/^"//; s/"$//'` removes quotation (`'`).
+    - The bucket name will be stored in `MAIN_TABLE_ARN`.
+
 ## Preparing an article bucket
 
 ### Generating a unique name for an article bucket
@@ -76,7 +97,7 @@ Since we need a globally unique bucket name, I recommend you to append a random 
     aws cloudformation deploy --template-file api/api-template.yaml --stack-name covid-19-api-devel --parameter-overrides ArticleBucketName=$ARTICLE_BUCKET --capabilities CAPABILITY_IAM
     ```
 
-## Deploying REST API
+## Deploying a REST API
 
 Deployment of a REST API is not automated yet.
 You need to manually deploy the API.
