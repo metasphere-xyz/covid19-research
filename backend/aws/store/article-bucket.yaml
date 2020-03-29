@@ -21,6 +21,9 @@ Parameters:
       - 'ERROR'
       - 'CRITICAL'
     Default: 'INFO'
+  MainTableArn:
+    Description: 'ARN of the main DynamoDB table'
+    Type: 'String'
 
 Resources:
   ArticleBucket:
@@ -53,6 +56,12 @@ Resources:
                 - 's3:GetObject'
               # '${ArticleBucket.Arn}/json/*' causes circular dependency
               Resource: !Sub 'arn:aws:s3:::${ArticleBucketName}/json/*'
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: 'Allow'
+              Action:
+                - 'dynamodb:PutItem'
+              Resource: !Ref MainTableArn
       Events:
         ArticleUpload:
           Type: 'S3'
@@ -69,6 +78,7 @@ Resources:
       Environment:
         Variables:
           LAMBDA_LOG_LEVEL: !Ref RegisterArticleLogLevel
+          MAIN_TABLE_ARN: !Ref MainTableArn
       Tags:
         project: !Ref ProjectTagValue
 
