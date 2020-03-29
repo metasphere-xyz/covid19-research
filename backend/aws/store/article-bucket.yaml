@@ -1,7 +1,11 @@
 AWSTemplateFormatVersion: '2010-09-09'
+Transform: 'AWS::Serverless-2016-10-31'
 Description: 'Article bucket for metasphere'
 
 Parameters:
+  ArticleBucketName:
+    Description: 'Name fo the article bucket. Needs to be globally unique'
+    Type: 'String'
   ProjectTagValue:
     Description: 'Value to be associated with a "project" tag. "covid-19-research" by default'
     Type: 'String'
@@ -11,7 +15,7 @@ Resources:
   ArticleBucket:
     Type: 'AWS::S3::Bucket'
     Properties:
-      # BucketName is omitted to give a unique name.
+      BucketName: !Ref ArticleBucketName
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
         BlockPublicPolicy: true
@@ -20,6 +24,37 @@ Resources:
       Tags:
         - Key: 'project'
           Value: !Ref ProjectTagValue
+      # NotificationConfiguration is handled by other resources.
+
+  RegisterArticleFunction:
+    Type: 'AWS::Serverless::Function'
+    Properties:
+      Runtime: 'python3.8'
+      Description: 'Registers an article put in the article bucket'
+      Handler: 'index.lambda_handler'
+      CodeUri: 'register-function'
+      Policies:
+        - 'AWSLambdaBasicExecutionRole'
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: 'Allow'
+              Action:
+                - 's3:GetObject'
+              # '${ArticleBucket.Arn}/json/*' causes circular dependency
+              Resource: !Sub 'arn:aws:s3:::${ArticleBucketName}/json/*'
+      Events:
+        ArticleUpload:
+          Type: 'S3'
+          Properties:
+            Bucket: !Ref ArticleBucket
+            Events: 's3:ObjectCreated:Put'
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: 'prefix'
+                    Value: 'json/'
+                  - Name: 'suffix'
+                    Value: '.json'
 
 Outputs:
   ArticleBucketName:
@@ -28,3 +63,6 @@ Outputs:
   ArticleBucketArn:
     Description: 'ARN of the article bucket'
     Value: !GetAtt ArticleBucket.Arn
+  RegisterArticleFunctionArn:
+    Description: 'ARN of the article registration Lambda function'
+    Value: !GetAtt RegisterArticleFunction.Arn
