@@ -65,6 +65,12 @@ Since we need a globally unique bucket name, I recommend you to append a random 
     ARTICLE_BUCKET=covid-19-article-bucket-`openssl rand -hex 4`
     ```
 
+If you already created a CloudFormation stack, you can do the following,
+
+```
+ARTICLE_BUCKET=`aws --query "Stacks[0].Outputs[?OutputKey=='ArticleBucketName']|[0].OutputValue" cloudformation describe-stacks --stack-name covid-19-article-bucket-devel | sed 's/^"//; s/"$//'`
+```
+
 ### Preparing Python virtual environment
 
 Python scripts for Lambda functions may need to import additional packages.
