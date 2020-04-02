@@ -103,13 +103,55 @@ python -m venv ./venv
     sam package --template-file store/build/template.yaml --output-template-file store/article-bucket-packaged.yaml --s3-bucket $TEMPLATE_BUCKET
     ```
 
-3. Deploy a CloudFormation stack by [`store/article-bucket.yaml`](store/article-bucket.yaml).
+3. Deploy a CloudFormation stack by `store/article-bucket-packaged.yaml`.
 
     ```
     aws cloudformation deploy --template-file store/article-bucket-packaged.yaml --stack-name covid-19-article-bucket-devel --parameter-overrides ArticleBucketName=$ARTICLE_BUCKET MainTableArn=$MAIN_TABLE_ARN --capabilities CAPABILITY_IAM
     ```
 
 4. A new empty bucket and Lambda functions will be created.
+
+### Creating metadata crawlers
+
+1. Package a CloudFormation template [`store/metadata-crawler.yaml`](store/metadata-crawler.yaml).
+
+    ```
+    aws cloudformation package --template-file store/metadata-crawler.yaml --output-template-file store/metadata-crawler-packaged.yaml --s3-bucket $TEMPLATE_BUCKET
+    ```
+
+2. Deploy a CloudFormation stack by `store/metadata-crawler-packaged.yaml`.
+
+    ```
+    aws cloudformation deploy --template-file store/metadata-crawler-packaged.yaml --stack-name covid-19-metadata-crawler-devel --parameter-overrides MetadataBucketName=$ARTICLE_BUCKET TemplateBucketName=$TEMPLATE_BUCKET --capabilities CAPABILITY_IAM
+    ```
+
+3. Remember the name of the metadata crawler workflow.
+
+    ```
+    METADATA_CRAWLER_WORKFLOW=`aws --query "Stacks[0].Outputs[?OutputKey=='MetadataCrawlerWorkflowName']|[0].OutputValue" cloudformation describe-stacks --stack-name covid-19-metadata-crawler-devel | sed 's/^"//; s/"$//'`
+    ```
+
+#### Running metadata crawlers
+
+1. Upload a `metadata.csv`.
+
+    ```
+    aws s3 cp path/to/metadata.csv s3://$ARTICLE_BUCKET/meadata/csv/
+    ```
+
+   You can locate the latest `metadata.csv` under `arn:aws:s3:::ai2-semanticscholar-cord-19`.
+
+2. Delete the Parquet outputs unless it is the first run.
+
+    ```
+    aws s3 rm s3://$ARTICLE_BUCKET/metadata/parquet/ --recursive
+    ```
+
+3. Start the metadata crawler workflow.
+
+    ```
+    aws glue start-workflow-run --name $METADATA_CRAWLER_WORKFLOW
+    ```
 
 ## Creating a REST API stack
 
