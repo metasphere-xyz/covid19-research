@@ -45,11 +45,11 @@
 8. The `article API` returns the `augmented article` to the `user`.
 9. Done
 
-### Finding an article of a given hash
+### Finding metadata of a given paper ID
 
-- `Partition` = `article:{hash}`
+- `Partition` = `metadata:{paper ID}`
 
 ### Finding an article with a given tag
 
 - `Partition` = `tag:{tag}`
-- `Sort` = `{hash}`
+- `Sort` = `{paper ID}`
