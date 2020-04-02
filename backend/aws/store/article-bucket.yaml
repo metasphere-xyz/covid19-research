@@ -24,6 +24,22 @@ Parameters:
   MainTableArn:
     Description: 'ARN of the main DynamoDB table'
     Type: 'String'
+  MetadataDatabaseName:
+    Description: 'Name of the metadata database. "cord-19-metadata-devel" by default'
+    Type: 'String'
+    Default: 'cord-19-metadata-devel'
+  MetadataTableName:
+    Description: 'Name of the metadata table. "metadata-parquet" by default'
+    Type: 'String'
+    Default: 'metadata-parquet'
+  MetadataAthenaQueryPath:
+    Description: 'Path to the Athena query for metadata in the article bucket. "/metadata/athena" by default'
+    Type: 'String'
+    Default: '/metadata/athena'
+  MetadataParquetPath:
+    Description: 'Path to the metadata Parquet files. "/metadata/parquet" by default'
+    Type: 'String'
+    Default: '/metadata/parquet'
 
 Resources:
   ArticleBucket:
@@ -47,6 +63,8 @@ Resources:
       Description: 'Registers an article put in the article bucket'
       Handler: 'index.lambda_handler'
       CodeUri: 'register-function'
+      # Athena may take long
+      Timeout: 20
       Policies:
         - 'AWSLambdaBasicExecutionRole'
         - Version: '2012-10-17'
@@ -54,14 +72,55 @@ Resources:
             - Effect: 'Allow'
               Action:
                 - 's3:GetObject'
-              # '${ArticleBucket.Arn}/json/*' causes circular dependency
-              Resource: !Sub 'arn:aws:s3:::${ArticleBucketName}/json/*'
+              # '${ArticleBucket.Arn}' causes circular dependency
+              Resource:
+                - !Sub 'arn:aws:s3:::${ArticleBucketName}/json/*'
+                # for Athena query
+                - !Sub 'arn:aws:s3:::${ArticleBucketName}${MetadataParquetPath}*'
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: 'Allow'
+              Action:
+                # according to AmazonAthenaFullAccess
+                # except for s3:CreateBucket
+                - 's3:GetBucketLocation'
+                - 's3:GetObject'
+                - 's3:ListBucket'
+                - 's3:ListBucketMultipartUploads'
+                - 's3:ListMultipartUploadParts'
+                - 's3:AbortMultipartUpload'
+                - 's3:PutObject'
+              # '${ArticleBucket.Arn}' causes circular dependency
+              Resource:
+                # Athena checks the bucket availability
+                - !Sub 'arn:aws:s3:::${ArticleBucketName}'
+                - !Sub 'arn:aws:s3:::${ArticleBucketName}${MetadataAthenaQueryPath}*'
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: 'Allow'
+              Action:
+                # according to AmazonAthenaFullAccess
+                # minimum privileges are left
+                - 'glue:GetDatabase'
+                - 'glue:GetTable'
+                - 'glue:GetPartition'
+              Resource: '*'
         - Version: '2012-10-17'
           Statement:
             - Effect: 'Allow'
               Action:
                 - 'dynamodb:PutItem'
               Resource: !Ref MainTableArn
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: 'Allow'
+              Action:
+                - 'athena:GetQueryExecution'
+                - 'athena:GetQueryResults'
+                - 'athena:GetQueryResultsStream'
+                - 'athena:StartQueryExecution'
+                - 'athena:StopQueryExecution'
+              Resource: '*'
       Events:
         ArticleUpload:
           Type: 'S3'
@@ -79,6 +138,9 @@ Resources:
         Variables:
           LAMBDA_LOG_LEVEL: !Ref RegisterArticleLogLevel
           MAIN_TABLE_ARN: !Ref MainTableArn
+          METADATA_DATABASE_NAME: !Ref MetadataDatabaseName
+          METADATA_TABLE_NAME: !Ref MetadataTableName
+          METADATA_ATHENA_QUERY_PATH: !Sub 's3://${ArticleBucketName}${MetadataAthenaQueryPath}'
       Tags:
         project: !Ref ProjectTagValue
 
