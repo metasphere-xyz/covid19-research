@@ -157,10 +157,24 @@ python -m venv ./venv
 
 1. [Prepare an article bucket](#preparing-an-article-bucket) if it is not yet done.
 
-2. Deplay a CloudFormation stack by [`api/api-template.yaml`](api/api-template.yaml).
+2. Build a SAM template [`api/lambda-functions.yaml`](api/lambda-functions.yaml).
 
     ```
-    aws cloudformation deploy --template-file api/api-template.yaml --stack-name covid-19-api-devel --parameter-overrides ArticleBucketName=$ARTICLE_BUCKET --capabilities CAPABILITY_IAM
+    sam build --use-container --template api/lambda-functions.yaml --build-dir api/build
+    ```
+
+   **NOTE**: `api/lambda-functions.yaml` is used only for building lambda functions.
+
+3. Package a CloudFormation template [api/api-template.yaml](api/api-template.yaml).
+
+    ```
+    aws cloudformation package --template-file api/api-template.yaml --output-template-file api/api-template-packaged.yaml --s3-bucket $TEMPLATE_BUCKET
+    ```
+
+4. Deplay a CloudFormation stack by `api/api-template-packaged.yaml`.
+
+    ```
+    aws cloudformation deploy --template-file api/api-template-packaged.yaml --stack-name covid-19-api-devel --parameter-overrides ArticleBucketName=$ARTICLE_BUCKET MainTableArn=$MAIN_TABLE_ARN --capabilities CAPABILITY_IAM
     ```
 
 ## Deploying a REST API
