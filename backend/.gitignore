@@ -1,3 +1,6 @@
 # generated files
+/aws/api/build
+/aws/api/api-template-packaged.yaml
 /aws/store/build
 /aws/store/article-bucket-packaged.yaml
+/aws/store/metadata-crawler-packaged.yaml
