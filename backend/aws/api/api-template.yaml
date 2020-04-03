@@ -5,6 +5,20 @@ Parameters:
   ArticleBucketName:
     Description: 'Name of the article bucket'
     Type: 'String'
+  MainTableArn:
+    Description: 'ARN of the main DynamoDB table'
+    Type: 'String'
+  LogLevel:
+    Description: 'Log level of Lmabda functions. "INFO" by default'
+    Type: 'String'
+    AllowedValues:
+      - 'NOTSET'
+      - 'DEBUG'
+      - 'INFO'
+      - 'WARNING'
+      - 'ERROR'
+      - 'CRITICAL'
+    Default: 'INFO'
   ProjectTagValue:
     Description: 'Value to be associated with a "project" tag. "covid-19-research" by default'
     Type: 'String'
@@ -20,8 +34,62 @@ Resources:
         - Key: 'project'
           Value: !Ref ProjectTagValue
 
-  # role for article bucket S3 access
-  ArticleBucketAccessRole:
+  # function that gets an article
+  GetArticleFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Description: 'Gets an article associated with a given paper ID'
+      Role: !GetAtt GetArticleFunctionRole.Arn
+      Code: 'build/GetArticleFunction'
+      Handler: 'index.lambda_handler'
+      Runtime: 'python3.8'
+      Timeout: 5
+      Environment:
+        Variables:
+          MAIN_TABLE_ARN: !Ref MainTableArn
+          ARTICLE_BUCKET_NAME: !Ref ArticleBucketName
+          LOG_LEVEL: !Ref LogLevel
+      Tags:
+        - Key: 'project'
+          Value: !Ref ProjectTagValue
+  # role to get from DynamoDB and S3
+  GetArticleFunctionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      Description: 'Role to get from DynamoDB and S3'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: 'Allow'
+            Principal:
+              Service: 'lambda.amazonaws.com'
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Policies:
+        - PolicyName: 'MainTableGet'
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: 'Allow'
+                Action:
+                  - 'dynamodb:GetItem'
+                Resource:
+                  - !Ref MainTableArn
+        - PolicyName: 'ArticleBucketGet'
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: 'Allow'
+                Action:
+                  - 's3:GetObject'
+                Resource:
+                  - !Sub 'arn:aws:s3:::${ArticleBucketName}/*'
+      Tags:
+        - Key: 'project'
+          Value: !Ref ProjectTagValue
+  # role to invoke GetArticleFunction
+  GetArticleFunctionInvokerRole:
     Type: 'AWS::IAM::Role'
     Properties:
       AssumeRolePolicyDocument:
@@ -32,14 +100,15 @@ Resources:
               Service: 'apigateway.amazonaws.com'
             Action: 'sts:AssumeRole'
       Policies:
-        - PolicyName: 'ArticleBucketAccess'
+        - PolicyName: 'InvokeGetArticleFunction'
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
               - Effect: 'Allow'
                 Action:
-                  - 's3:GetObject'
-                Resource: !Sub 'arn:aws:s3:::${ArticleBucketName}/*'
+                  - 'lambda:InvokeFunction'
+                Resource:
+                  - !GetAtt GetArticleFunction.Arn
 
   # /article
   ArticleResource:
@@ -96,8 +165,6 @@ Resources:
       ResourceId: !Ref ArticleHashResource
       HttpMethod: 'GET'
       AuthorizationType: 'NONE'
-      RequestParameters:
-        method.request.path.hash: true
       MethodResponses:
         - StatusCode: 200
           ResponseModels:
@@ -111,11 +178,15 @@ Resources:
       Integration:
         Type: 'AWS'
         PassthroughBehavior: 'WHEN_NO_MATCH'
-        IntegrationHttpMethod: 'GET'
-        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:s3:path/${ArticleBucketName}/json/{hash}.json'
-        Credentials: !GetAtt ArticleBucketAccessRole.Arn
-        RequestParameters:
-          integration.request.path.hash: 'method.request.path.hash'
+        # IntegrationHttpMethod must be POST for Lambda
+        IntegrationHttpMethod: 'POST'
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${GetArticleFunction.Arn}/invocations'
+        Credentials: !GetAtt GetArticleFunctionInvokerRole.Arn
+        RequestTemplates:
+          application/json: |
+            {
+              "paperId": "$input.params('hash')"
+            }
         IntegrationResponses:
           - StatusCode: 200
             ResponseParameters:
@@ -124,6 +195,10 @@ Resources:
               method.response.header.Access-Control-Allow-Origin: "'*'"
           - StatusCode: 400
             SelectionPattern: '4\d{2}'
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type'"
+              method.response.header.Access-Control-Allow-Methods: "'OPTIONS,GET'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
             ResponseTemplates:
               application/json: |
                 {
@@ -132,6 +207,10 @@ Resources:
                 }
           - StatusCode: 500
             SelectionPattern: '5\d{2}'
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type'"
+              method.response.header.Access-Control-Allow-Methods: "'OPTIONS,GET'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
             ResponseTemplates:
               application/json: |
                 {
