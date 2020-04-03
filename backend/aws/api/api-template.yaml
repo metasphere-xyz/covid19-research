@@ -118,20 +118,20 @@ Resources:
       ParentId: !GetAtt MetasphereApi.RootResourceId
       PathPart: 'article'
 
-  # /article/{hash}
-  ArticleHashResource:
+  # /article/{paper_id}
+  ArticlePaperIdResource:
     Type: 'AWS::ApiGateway::Resource'
     Properties:
       RestApiId: !Ref MetasphereApi
       ParentId: !Ref ArticleResource
-      PathPart: '{hash}'
+      PathPart: '{paper_id}'
   # - OPTIONS (for CORS support)
-  ArticleHashOPTIONS:
+  ArticlePaperIdOPTIONS:
     Type: 'AWS::ApiGateway::Method'
     Properties:
-      OperationName: 'Preflight for /article/{hash}'
+      OperationName: 'Preflight for /article/{paper_id}'
       RestApiId: !Ref MetasphereApi
-      ResourceId: !Ref ArticleHashResource
+      ResourceId: !Ref ArticlePaperIdResource
       HttpMethod: 'OPTIONS'
       AuthorizationType: 'NONE'
       MethodResponses:
@@ -157,12 +157,12 @@ Resources:
             ResponseTemplates:
               application/json: '{}'
   # - GET
-  ArticleHashGET:
+  ArticlePaperIdGET:
     Type: 'AWS::ApiGateway::Method'
     Properties:
-      OperationName: 'Gets an article'
+      OperationName: 'GETs an article associated with a given paper ID'
       RestApiId: !Ref MetasphereApi
-      ResourceId: !Ref ArticleHashResource
+      ResourceId: !Ref ArticlePaperIdResource
       HttpMethod: 'GET'
       AuthorizationType: 'NONE'
       MethodResponses:
@@ -185,7 +185,7 @@ Resources:
         RequestTemplates:
           application/json: |
             {
-              "paperId": "$input.params('hash')"
+              "paperId": "$input.params('paper_id')"
             }
         IntegrationResponses:
           - StatusCode: 200
@@ -203,7 +203,7 @@ Resources:
               application/json: |
                 {
                   "statusCode": 400,
-                  "message": "article is not available: hash=$input.params('hash')"
+                  "message": "article is not available: paper_id=$input.params('paper_id')"
                 }
           - StatusCode: 500
             SelectionPattern: '5\d{2}'
@@ -215,7 +215,7 @@ Resources:
               application/json: |
                 {
                   "statusCode": 500,
-                  "message": "internal server error: hash=$input.params('hash')"
+                  "message": "internal server error: paper_id=$input.params('paper_id')"
                 }
 
 Outputs:
