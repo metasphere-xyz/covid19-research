@@ -7,13 +7,13 @@ Parameters:
     Type: 'String'
     Default: 'covid-19-research'
   ReadCapacityUnits:
-    Description: 'Read Capacity Units (RCU) of the DynamoDB. 1 by default'
+    Description: 'Read Capacity Units (RCU) of the DynamoDB. 4 by default'
     Type: 'Number'
-    Default: 1
+    Default: 4
   WriteCapacityUnits:
-    Description: 'Write Capacity Units (WCU) of the DynamoDB. 1 by default'
+    Description: 'Write Capacity Units (WCU) of the DynamoDB. 4 by default'
     Type: 'Number'
-    Default: 1
+    Default: 4
 
 Resources:
   MainTable:
