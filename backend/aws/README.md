@@ -177,7 +177,48 @@ python -m venv ./venv
     aws cloudformation deploy --template-file api/api-template-packaged.yaml --stack-name covid-19-api-devel --parameter-overrides ArticleBucketName=$ARTICLE_BUCKET MainTableArn=$MAIN_TABLE_ARN --capabilities CAPABILITY_IAM
     ```
 
-## Deploying a REST API
+### Deploying a REST API
 
 Deployment of a REST API is not automated yet.
 You need to manually deploy the API.
+
+## Uploading articles
+
+To avoid to hit the rate limit of Athena and the capacity unit of DynamoDB, a Python script [`py/upload_articles.py`](py/upload_articles.py) that uploads articles is introduced.
+It slips a delay between two upload sessions.
+
+Running `python py/upload_articles.py -h` will show messages similar to the following,
+
+```
+usage: upload_articles.py [-h] --profile PROFILE --bucket BUCKET
+                          [--folder FOLDER] --main-table MAIN_TABLE_ARN
+                          [--interval INTERVAL] [--overrides]
+                          PATTERNS [PATTERNS ...]
+
+Uploads given articles to an S3 bucket and DynamoDB
+
+positional arguments:
+  PATTERNS              glob patterns to locate articles
+
+optional arguments:
+  -h, --help            show this help message and exit
+  --profile PROFILE     name of an AWS profile to access an S3 bucket
+  --bucket BUCKET       name of an S3 bucket to which articles are to be
+                        uploaded
+  --folder FOLDER       path to the folder to which articles are to be
+                        uploaded. "json" by default
+  --main-table MAIN_TABLE_ARN
+                        ARN of the main DynamodDB table
+  --interval INTERVAL   interval in seconds between two upload sessions. 0.25
+                        by default
+  --overrides           whether articles in an S3 bucket are overridden. by
+                        default, an existing article is not updated if it is
+                        in a main DynamoDB table
+```
+
+The following example command uploads all JSON files in a folder `dataset`.
+Replace `YOUR-PROFILE` with your AWS profile.
+
+```
+python py/upload_articles.py --profile YOUR-PROFILE --bucket $ARTICLE_BUCKET --main-table $MAIN_TABLE_ARN 'dataset/*.json'
+```
