@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>metasphere/backend</title>
+    <style>
+#cy{
+	width:100vw;
+	height:90vh;
+}
+
+    </style>
+</head>
+
+<body class="">
+	<h1>test/page</h1>
+	<p><button id="context-redraw-btn" value="redraw" /></p>
+	<div id="cy" class="tile notification is-fullheight">
+
+	</div>
+
+    <script src="/js/cytoscape.min.js"></script>
+    <script src="/js/layout-base.js"></script>
+    <script src="/js/cose-base.js"></script>
+    <script src="/js/cytoscape-cose-bilkent.js"></script>
+    <script>
+        function log(...args) {
+            var debug = true;
+            if (debug) {
+                console.log(...args);
+            }
+        }
+
+
+        const serverUrl = '/query?timeout=60s'
+        // Example POST method implementation:
+        async function postQuery(data = {}, url = serverUrl) {
+            log("query", data)
+            // Default options are marked with *
+            const response = await fetch(url, {
+                method: 'POST', // *GET, POST, PUT, DELETE, etc.
+                mode: 'cors', // no-cors, *cors, same-origin
+                cache: 'no-cache', // *default, no-cache, reload, force-cache, only-if-cached
+                credentials: 'same-origin', // include, *same-origin, omit
+                headers: {
+                    //'Content-Type': 'application/json'
+                    'Content-Type': 'application/graphql+-',
+                },
+                redirect: 'follow', // manual, *follow, error
+                referrerPolicy: 'no-referrer', // no-referrer, *client
+                //body: JSON.stringify(data) // body data type must match "Content-Type" header
+                body: data
+            });
+            return await response.json(); // parses JSON response into native JavaScript objects
+        }
+
+    </script>
+    <script>
+        window.onload = function () {
+            /*
+            ###########################################
+            NETWORK
+            ###########################################
+            */
+
+            var q = `{
+                nodes(func: has(title))
+                { 
+                    id: uid
+                    title: title
+                }
+        
+                related(func: has(related_to)) @normalize
+                {
+                    source: uid
+                    related_to {
+                        target: uid
+                    }
+                }
+            }`
+
+
+
+            postQuery(q)
+                .then((data) => {
+                    log(data); // JSON data parsed by `response.json()` call
+		    // parse nodes
+                    var nodes = data.data.nodes.map(v => {
+                        return { data: { id: v.id, label: v.title } }
+                    });
+		    //parse edges
+                    var edges = data.data.relaed.map(v => {
+                        return {
+                            data: {
+                                id: `${v.source}-${v.target}`,
+                                source: v.source,
+                                target: v.target,
+                            }
+                        }
+                    });
+                    nodes = nodes.concat(edges);
+		    //render the graph
+                    renderGraph(nodes);
+                })
+                .catch((error) => {
+                    console.error('Error:', error);
+                });
+
+
+            function renderGraph(elements) {
+                cy = window.cy = cytoscape({
+                    container: document.getElementById('cy'),
+
+                    ready: function () {
+                        console.log("ready to serve");
+                        this.layout({ name: 'cose-bilkent', animationDuration: 1000 }).run();
+                    },
+
+                    style: [
+                        {
+                            selector: 'node',
+                            style: {
+                                'background-color': '#213133',
+                                'label': 'data(label)',
+                                'font-size': '8px',
+                                'width': 14,
+                                'height': 14,
+                            }
+                        },
+                        {
+                            selector: 'edge',
+                            style: {
+                                'width': 2,
+                                'line-color': '#9FBDA5',
+                                'mid-target-arrow-shape': 'triangle',
+                                'mid-target-arrow-color': '#9FBDA5',
+                            }
+                        },
+                    ],
+                    elements: elements
+                });
+                cy.maxZoom(10);
+                cy.minZoom(1);
+                cy.nodes().on('click', function (e) {
+                    log('clicked ' + ele.id());
+                });
+            }
+
+
+            document.getElementById(`context-redraw-btn`)
+                .addEventListener("click", function () {
+                    var layout = cy.layout({
+                        name: 'cose-bilkent',
+                        animate: 'end',
+                        animationEasing: 'ease-out',
+                        animationDuration: 1000,
+                        randomize: true
+                    });
+
+                    layout.run();
+                });
+
+            // document.getElementById("randomize").addEventListener("click", function () {
+            //     var layout = cy.layout({
+            //         name: 'random',
+            //         animate: true,
+            //         animationDuration: 1000,
+            //         animationEasing: 'ease-out'
+            //     });
+
+            //     layout.run();
+            // });
+        }
+    </script>
+</body>
+
+</html>
+
