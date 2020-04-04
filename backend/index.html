@@ -90,7 +90,7 @@
                         return { data: { id: v.id, label: v.title } }
                     });
 		    //parse edges
-                    var edges = data.data.relaed.map(v => {
+                    var edges = data.data.related.map(v => {
                         return {
                             data: {
                                 id: `${v.source}-${v.target}`,
