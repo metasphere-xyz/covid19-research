@@ -36,6 +36,7 @@ ATHENA_WAIT_INTERVAL = 1.0 # in seconds
 # metadata to be imported to DynamoDB.
 # (DynamoDB attribute name, key in metadata)
 METADATA_TO_IMPORT = [
+    ('PaperID', 'paper_id'),
     ('Title', 'title'),
     ('Authors', 'authors'),
     ('PublishDate', 'publish_time'),
