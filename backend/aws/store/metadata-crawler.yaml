@@ -1,0 +1,200 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Collects and registers metadata of articles'
+
+Parameters:
+  ProjectTagValue:
+    Description: 'Value to be associated with a project tag. "covid-19-research" by default'
+    Type: 'String'
+    Default: 'covid-19-research'
+  MetadataBucketName:
+    Description: 'Name of the S3 bucket containing metadata'
+    Type: 'String'
+  MetadataBasePrefix:
+    Description: 'Path prefix of a base folder of metadata in the metadata bucket. "/metadata" by default'
+    Type: 'String'
+    Default: '/metadata'
+  MetadataCsvPath:
+    Description: 'Path prefix of a folder containing metadata CSV files. "/csv" by default'
+    Type: 'String'
+    Default: '/csv'
+  MetadataParquetPath:
+    Description: 'Path prefix of a folder containing metadata Parquet files. "/parquet" by default'
+    Type: 'String'
+    Default: '/parquet'
+  MetadataDatabaseName:
+    Description: 'Name of a metadata database. "cord-19-metadata-devel" by default'
+    Type: 'String'
+    Default: 'cord-19-metadata-devel'
+  MetadataTablePrefix:
+    Description: 'Prefix of a table in a metadata database. "metadata-" by default'
+    Type: 'String'
+    Default: 'metadata-'
+  TemplateBucketName:
+    Description: 'Name of the bucket for Job scripts'
+    Type: 'String'
+
+Resources:
+  MetadataCrawlerRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: 'Allow'
+            Principal:
+              Service: 'glue.amazonaws.com'
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole'
+      Policies:
+        - PolicyName: 'MetadataBucketAccss'
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: 'Allow'
+                Action:
+                  - 's3:DeleteObject'
+                  - 's3:GetObject'
+                  - 's3:PutObject'
+                Resource:
+                  - !Sub 'arn:aws:s3:::${MetadataBucketName}${MetadataBasePrefix}${MetadataCsvPath}*'
+                  - !Sub 'arn:aws:s3:::${MetadataBucketName}${MetadataBasePrefix}${MetadataParquetPath}*'
+                  # temporary directory (do we really need this?)
+                  - !Sub 'arn:aws:s3:::${MetadataBucketName}${MetadataBasePrefix}/temp*'
+              - Effect: 'Allow'
+                Action:
+                  - 's3:GetObject'
+                Resource:
+                  # to read the script.
+                  - !Sub 'arn:aws:s3:::${TemplateBucketName}/*'
+      Tags:
+        - Key: 'project'
+          Value: !Ref ProjectTagValue
+
+  MetadataCsvCrawler:
+    Type: 'AWS::Glue::Crawler'
+    Properties:
+      Description: 'Collects metadata CSV files'
+      Role: !Ref MetadataCrawlerRole
+      DatabaseName: !Ref MetadataDatabaseName
+      TablePrefix: !Ref MetadataTablePrefix
+      Targets:
+        S3Targets:
+          - Path: !Sub 's3://${MetadataBucketName}${MetadataBasePrefix}${MetadataCsvPath}'
+      Tags:
+        project: !Ref ProjectTagValue
+
+  MetadataCsvToParquetJob:
+    Type: 'AWS::Glue::Job'
+    Properties:
+      Description: 'Converts metadata CSV into Parquet'
+      Role: !Ref MetadataCrawlerRole
+      # GlueVersion 1.0 --> Spark 2.4
+      GlueVersion: '1.0'
+      DefaultArguments:
+        '--job-language': 'scala'
+        '--class': 'GlueApp'
+        '--job-bookmark-option': 'job-bookmark-disable'
+        '--enable-continuous-cloudwatch-log': true
+        # do we really need a temporary directory?
+        '--TempDir': !Sub 's3://${MetadataBucketName}${MetadataBasePrefix}/temp'
+        # arguments for the script
+        '--metadata_database': !Ref MetadataDatabaseName
+        '--input_table_name': !Sub '${MetadataTablePrefix}csv'
+        '--output_path': !Sub 's3://${MetadataBucketName}${MetadataBasePrefix}${MetadataParquetPath}'
+      Command:
+        Name: 'glueetl'
+        ScriptLocation: 'csv-to-parquet/GlueApp.scala'
+      MaxCapacity: 5
+      Tags:
+        project: !Ref ProjectTagValue
+
+  MetadataParquetCrawler:
+    Type: 'AWS::Glue::Crawler'
+    Properties:
+      Description: 'Collects metadata Parquet files'
+      Role: !Ref MetadataCrawlerRole
+      DatabaseName: !Ref MetadataDatabaseName
+      TablePrefix: !Ref MetadataTablePrefix
+      Targets:
+        S3Targets:
+          - Path: !Sub 's3://${MetadataBucketName}${MetadataBasePrefix}${MetadataParquetPath}'
+      Tags:
+        project: !Ref ProjectTagValue
+
+  MetadataCrawlerWorkflow:
+    Type: 'AWS::Glue::Workflow'
+    Properties:
+      Description: 'Collects metadata and populates metadata table for Athena'
+      Tags:
+        project: !Ref ProjectTagValue
+
+  MetadataCsvCrawlerTrigger:
+    Type: 'AWS::Glue::Trigger'
+    Properties:
+      Description: 'Triggers metadata CSV crawler'
+      WorkflowName: !Ref MetadataCrawlerWorkflow
+      Type: 'ON_DEMAND'
+      Actions:
+        - CrawlerName: !Ref MetadataCsvCrawler
+      Tags:
+        project: !Ref ProjectTagValue
+
+  MetadataCsvToParquetJobTrigger:
+    Type: 'AWS::Glue::Trigger'
+    Properties:
+      Description: 'Triggers metadata CSV to Parquet job'
+      WorkflowName: !Ref MetadataCrawlerWorkflow
+      Type: 'CONDITIONAL'
+      Predicate:
+        Logical: 'ANY'
+        Conditions:
+          - CrawlerName: !Ref MetadataCsvCrawler
+            CrawlState: 'SUCCEEDED'
+            LogicalOperator: 'EQUALS'
+      Actions:
+        - JobName: !Ref MetadataCsvToParquetJob
+      # the following setting activates a trigger,
+      # but only valid for a NEW trigger (not for updating)
+      # https://stackoverflow.com/questions/48618156/cloudformation-a-way-to-define-an-activated-scheduled-glue-job-trigger/58381166#58381166
+      StartOnCreation: true
+      Tags:
+        project: !Ref ProjectTagValue
+
+  MetadataParquetCrawlerTrigger:
+    Type: 'AWS::Glue::Trigger'
+    Properties:
+      Description: 'Triggers metadata Parquet crawler'
+      WorkflowName: !Ref MetadataCrawlerWorkflow
+      Type: 'CONDITIONAL'
+      Predicate:
+        Logical: 'ANY'
+        Conditions:
+          - JobName: !Ref MetadataCsvToParquetJob
+            State: 'SUCCEEDED'
+            LogicalOperator: 'EQUALS'
+      Actions:
+        - CrawlerName: !Ref MetadataParquetCrawler
+      # the following setting activates a trigger,
+      # but only valid for a NEW trigger (not for updating)
+      # https://stackoverflow.com/questions/48618156/cloudformation-a-way-to-define-an-activated-scheduled-glue-job-trigger/58381166#58381166
+      StartOnCreation: true
+      Tags:
+        project: !Ref ProjectTagValue
+
+Outputs:
+  MetadataParquetTableName:
+    Description: 'Name of the metadata Parquet table for Athena'
+    Value: !Sub '${MetadataTablePrefix}-parquet'
+  MetadataCrawlerWorkflowName:
+    Description: 'Name of the metadata crawler workflow'
+    Value: !Ref MetadataCrawlerWorkflow
+  MetadataCsvCrawlerName:
+    Description: 'Name of the metadata CSV crawler'
+    Value: !Ref MetadataCsvCrawler
+  MetadataCsvToParquetJobName:
+    Description: 'Name of the metadata CSV to Parquet job'
+    Value: !Ref MetadataCsvToParquetJob
+  MetadataParquetCrawlerName:
+    Description: 'Name of the metadata Parquet crawler'
+    Value: !Ref MetadataParquetCrawler
