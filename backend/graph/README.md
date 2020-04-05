@@ -132,21 +132,3 @@ journalctl -fu dgraph-alpha
 journalctl -fu caddy
 ```
 
-## Hosting a test page locally
-
-There is a test page in [test](./test) directory.
-To host a test page on your `localhost`, please take the following steps,
-
-1. Install Node modules.
-
-    ```
-    npm ci
-    ```
-
-2. Start a service.
-
-    ```
-    npm start
-    ```
-
-3. A test page will be served at [`http://localhost:9001`](http://localhost:9001).
