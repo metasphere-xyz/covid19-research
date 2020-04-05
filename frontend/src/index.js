@@ -6,7 +6,7 @@ Vue.use(Buefy)
 import 'buefy/dist/buefy.css'
 
 import router from '@routes'
-router.replace('/example')
+router.replace('/explorer')
 
 import App from '@components/app'
 
