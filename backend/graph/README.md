@@ -58,7 +58,7 @@ paste the following content:
 
 ```
 dev.metasphere.xyz {
-    root /data/covid19-research/backend
+    root /data/covid19-research/backend/graph
     proxy  /query localhost:8080 {
 	transparent
     }
