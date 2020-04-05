@@ -10,7 +10,7 @@ import VueRouter from 'vue-router'
 Vue.use(VueRouter)
 
 import Intro from '@components/intro'
-import Example from '@components/example'
+import Explorer from '@components/explorer'
 
 const routes = [
   {
@@ -18,8 +18,8 @@ const routes = [
     component: Intro
   },
   {
-    path: '/example',
-    component: Example
+    path: '/explorer',
+    component: Explorer
   }
 ]
 
