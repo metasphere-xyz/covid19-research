@@ -1,0 +1,26 @@
+{
+  "name": "dgraph-test",
+  "version": "0.1.0",
+  "description": "Test page for dgraph instance",
+  "private": true,
+  "scripts": {
+    "start": "node service.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/metasphere-xyz/covid19-research.git"
+  },
+  "keywords": [
+    "dgraph"
+  ],
+  "author": "Andrea, Kikuo",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/metasphere-xyz/covid19-research/issues"
+  },
+  "homepage": "https://github.com/metasphere-xyz/covid19-research#readme",
+  "devDependencies": {
+    "express": "^4.17.1"
+  }
+}
