@@ -1,0 +1,43 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Main DynamoDB table'
+
+Parameters:
+  ProjectTagValue:
+    Description: 'Value to be associated with a project tag. "covid-19-research" by default'
+    Type: 'String'
+    Default: 'covid-19-research'
+  ReadCapacityUnits:
+    Description: 'Read Capacity Units (RCU) of the DynamoDB. 4 by default'
+    Type: 'Number'
+    Default: 4
+  WriteCapacityUnits:
+    Description: 'Write Capacity Units (WCU) of the DynamoDB. 4 by default'
+    Type: 'Number'
+    Default: 4
+
+Resources:
+  MainTable:
+    Type: 'AWS::DynamoDB::Table'
+    Properties:
+      # TableName is omitted to give a unique name
+      AttributeDefinitions:
+        - AttributeName: 'Partition'
+          AttributeType: 'S'
+      KeySchema:
+        - AttributeName: 'Partition'
+          KeyType: 'HASH'
+      BillingMode: 'PROVISIONED'
+      ProvisionedThroughput:
+        ReadCapacityUnits: !Ref ReadCapacityUnits
+        WriteCapacityUnits: !Ref WriteCapacityUnits
+      Tags:
+        - Key: 'project'
+          Value: !Ref ProjectTagValue
+
+Outputs:
+  MainTableName:
+    Description: 'Name of the main DynamoDB table'
+    Value: !Ref MainTable
+  MainTableArn:
+    Description: 'ARN of the main DynamoDB table'
+    Value: !GetAtt MainTable.Arn

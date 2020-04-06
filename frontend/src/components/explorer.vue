@@ -22,7 +22,7 @@
         </div>
       </div>
       <div class="column paper-column">
-        <paper :paper="currentPaper" />
+        <paper :paper="selected.article" />
       </div>
     </div>
     <b-loading
@@ -39,17 +39,6 @@ import * as d3 from 'd3'
 import arrays from '@utils/arrays'
 import { debounce } from 'lodash'
 import Paper from '@components/paper'
-
-const colorList = [
-  'blue',
-  'red',
-  'green',
-  'coral',
-  'cornflowerblue',
-  'crimson',
-  'cyan',
-  'drakblue'
-]
 
 /**
  * Example cluster and paper information.
@@ -90,7 +79,10 @@ export default {
       // clusters and paper
       clusters: [],
       reducedClusters: [],
-      currentPaper: null,
+      selected: {
+        node: null,
+        article: null
+      },
       // visible region
       domainX: [-25, 25],
       domainY: [-25, 25],
@@ -176,7 +168,10 @@ export default {
       contents.selectAll('circle')
         .data(clusters)
         .join('circle')
-          .attr('class', 'paper-dot')
+          .attr('class', d => {
+            const base = 'paper-dot'
+            return base + ((d === vm.selected.article) ? ' selected' : '')
+          })
           .attr('r', 3)
           .attr('cx', d => xScale(d.x))
           .attr('cy', d => yScale(d.y))
@@ -185,7 +180,6 @@ export default {
             if (process.env.NODE_ENV !== 'production') {
               console.log(`pointerover: ${d.paper_id}`)
             }
-            vm.currentPaper = d
             this.classList.add('highlighted')
           })
           .on('pointerout', function (d) {
@@ -193,6 +187,19 @@ export default {
               console.log(`pointerout: ${d.paper_id}`)
             }
             this.classList.remove('highlighted')
+          })
+          .on('pointerdown', function (d) {
+            if (process.env.NODE_ENV !== 'production') {
+              console.log(`pointerdown: ${d.paper_id}`)
+            }
+            if (vm.selected.node != null) {
+              vm.selected.node.classList.remove('selected')
+            }
+            vm.selected = {
+              node: this,
+              article: d
+            }
+            this.classList.add('selected')
           })
       if (process.env.NODE_ENV !== 'production'){
         console.log('finish renderClusters')
@@ -287,7 +294,7 @@ export default {
 </script>
 
 <style lang="scss">
-@import 'bulma/bulma.sass';
+@import 'bulma';
 
 /* true navbar height */
 $true-navbar-height: $navbar-height + ($navbar-padding-vertical / 2);
@@ -321,6 +328,11 @@ circle {
   &.paper-dot {
     &.highlighted {
       stroke: black;
+      stroke-opacity: 0.7;
+      stroke-width: 3;
+    }
+    &.selected {
+      stroke: red;
       stroke-opacity: 0.7;
       stroke-width: 3;
     }

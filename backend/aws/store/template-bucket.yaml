@@ -1,0 +1,30 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Bucket for template artifacts'
+
+Parameters:
+  ProjectTagValue:
+    Description: 'Value to be associated with a project tag. "covid-19-research" by default'
+    Type: 'String'
+    Default: 'covid-19-research'
+
+Resources:
+  TemplateBucket:
+    Type: 'AWS::S3::Bucket'
+    Properties:
+      # BucketName is omitted to give a unique name
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: 'project'
+          Value: !Ref ProjectTagValue
+
+Outputs:
+  TemplateBucketName:
+    Description: 'Name of the template artifact bucket'
+    Value: !Ref TemplateBucket
+  TemplateBucketArn:
+    Description: 'ARN of the template artifact bucket'
+    Value: !GetAtt TemplateBucket.Arn
