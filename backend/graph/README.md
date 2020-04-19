@@ -16,15 +16,7 @@ Also this guide assumes that you have cloned the repository into `/data/covid19-
 # curl https://get.dgraph.io -sSf | bash -s -- --systemd -y
 ```
 
-2. Disable mutations
-
-Edit the systemd script in `/etc/systemd/system/dgraph-alpha.service`, and modifiy the `ExecStart` command adding the `--mutation disallow` parameter.
-It should look like this:
-```
-ExecStart=/usr/bin/bash -c 'dgraph alpha --lru_mb 2048 -p /var/lib/dgraph/p -w /var/lib/dgraph/w  --mutations disallow'
-```
-
-and fix the dgraph installation by creating a symlink for bash
+2. Fix the dgraph installation by creating a symlink for bash
 ```
 ln -s /bin/bash /usr/bin/bash
 ```
