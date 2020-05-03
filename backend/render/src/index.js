@@ -1,5 +1,7 @@
 import { program } from 'commander'
 
+import { loadData } from './data'
+
 program
   .name(process.env.npm_package_name)
   .version(process.env.npm_package_version)
@@ -7,6 +9,8 @@ program
   .action(run)
 program.parse(process.argv)
 
-function run (data) {
-  console.log(`data: ${data}`)
+function run (dataPath) {
+  console.log(`data: ${dataPath}`)
+  loadData(dataPath)
+    .then(dataJson => console.log(dataJson))
 }
