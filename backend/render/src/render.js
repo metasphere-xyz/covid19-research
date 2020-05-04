@@ -59,8 +59,8 @@ export async function render (data) {
         })
     })
     .then(clusterNodes => {
-      console.log('making paper probability contours')
-      makeAllPaperProbabilityContours(clusterNodes)
+      console.log('rendering paper probability contours')
+      renderAllPaperProbabilityContours(clusterNodes)
       return clusterNodes
     })
 }
@@ -112,7 +112,13 @@ function countPapers (papers) {
 }
 
 /**
- * Makes list of subcluster nodes.
+ * Makes a list of subcluster nodes.
+ *
+ * @param {object} data
+ *
+ * @return {array}
+ *
+ *   List of subcluster nodes.
  */
 function makeSubclusterNodesList (data) {
   return data.second_layer.map(makeClusterNodes)
@@ -208,6 +214,10 @@ function forceBoundingBoxCenter () {
 /**
  * Calculates cluster node links.
  *
+ * @param {array} nodes
+ *
+ *   Nodes whose links are to be calculated.
+ *
  * @return {array}
  *
  *   Links between cluster nodes.
@@ -233,15 +243,45 @@ function calculateClusterNodeLinks (nodes) {
 
 /**
  * Makes paper clusters.
+ *
+ * @param {object} data
+ *
+ *   Data from which papers in each cluster are to be obtained.
+ *
+ * @return {array}
+ *
+ *   Array of paper sets of individual clusters.
  */
 function makePaperClusters (data) {
   return data.second_layer.map(makePaperNodesList)
 }
 
+/**
+ * Makes clusters of nodes to arrange papers.
+ *
+ * @param {object} cluster
+ *
+ *   Cluster from which papers in each subcluster are to be obtained.
+ *
+ * @return {array}
+ *
+ *   Array of paper node clusters of individual subclusters.
+ */
 function makePaperNodesList (cluster) {
   return cluster.papers.map(makePaperNodes)
 }
 
+/**
+ * Makes nodes to arrange papers.
+ *
+ * @param {array} papers
+ *
+ *   Papers in a subcluster.
+ *
+ * @return {array}
+ *
+ *   Nodes to arrange papers.
+ */
 function makePaperNodes (papers) {
   const radius = 0.01
   const angleSpeed = (2.0 * Math.PI) / papers.prob.length
@@ -257,6 +297,19 @@ function makePaperNodes (papers) {
   })
 }
 
+/**
+ * Arranges paper clusters.
+ *
+ * This function mutates an input object `paperClusterList`.
+ *
+ * @param {array} paperClusterList
+ *
+ *   Paper clusters to be arranged.
+ *
+ * @return {Promise}
+ *
+ *   Will be resolved to an array of arranged paper clusters.
+ */
 function arrangePaperClusters (paperClusterList) {
   const forceList = paperClusterList.map(paperNodesList => {
     return Promise.all(paperNodesList.map(arrangePapers))
@@ -264,6 +317,19 @@ function arrangePaperClusters (paperClusterList) {
   return Promise.all(forceList)
 }
 
+/**
+ * Arranges given papers.
+ *
+ * This function mutates an input object `papers`.
+ *
+ * @param {array} papers
+ *
+ *   Papers to be arranged.
+ *
+ * @return {Promise}
+ *
+ *   Will be resolved to an array of arranged papers.
+ */
 function arrangePapers (papers) {
   const force = initializePaperArrangingForce(papers)
   let tickCount = 0
@@ -279,6 +345,17 @@ function arrangePapers (papers) {
   })
 }
 
+/**
+ * Initializes a `d3-force.forceSimulation` to arrange given papers.
+ *
+ * @param {array} papers
+ *
+ *   Papers to be arranged.
+ *
+ * @return {object}
+ *
+ *   `d3-force.forceSimulation` that arranges `papers`.
+ */
 function initializePaperArrangingForce (papers) {
   const collide = forceCollide()
     .radius(d => d.r)
@@ -312,7 +389,7 @@ function mergeClustersAndPaperDistributions (clusterNodes, paperClusterList) {
 }
 
 /**
- * Makes paper probability contours.
+ * Renders paper probability contours.
  *
  * This function mutates the input object `clusterNodes`.
  *
@@ -320,18 +397,20 @@ function mergeClustersAndPaperDistributions (clusterNodes, paperClusterList) {
  *
  *   Clusters to make paper probability contours.
  */
-function makeAllPaperProbabilityContours (clusterNodes) {
-  clusterNodes.forEach(makePaperProbabilityContours)
+function renderAllPaperProbabilityContours (clusterNodes) {
+  clusterNodes.forEach(renderPaperProbabilityContours)
 }
 
 /**
  * Makes paper probability contours.
  *
+ * This function mutates the input object `clusterNode`.
+ *
  * @param {object} clusterNode
  *
  *   Cluster to make paper probability contours.
  */
-function makePaperProbabilityContours (clusterNode) {
+function renderPaperProbabilityContours (clusterNode) {
   // initializes grids
   const numGridRows = 80
   const numGridColumns = 80
@@ -378,7 +457,7 @@ function makePaperProbabilityContours (clusterNode) {
 }
 
 /**
- * Initializes grids to make probability contours.
+ * Initializes grids to render probability contours.
  *
  * @param {number} numGridRows
  *
@@ -390,7 +469,7 @@ function makePaperProbabilityContours (clusterNode) {
  *
  * @return {array}
  *
- *   Grids for probability contour generation.
+ *   Grids for probability contour rendering.
  */
 function initializePaperProbabilityGrids (numGridRows, numGridColumns) {
   const grids = new Array(numGridRows * numGridColumns)

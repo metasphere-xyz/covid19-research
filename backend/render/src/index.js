@@ -6,6 +6,7 @@ import {
 } from './data'
 import { render } from './render'
 
+// parses command line arguments.
 program
   .name(process.env.npm_package_name)
   .version(process.env.npm_package_version)
@@ -20,7 +21,6 @@ function run (dataPath, outPath) {
       return render(dataJson)
     })
     .then(rendered => {
-      console.log(rendered)
       return saveJson(outPath, rendered)
     })
     .catch(err => console.error(err))
