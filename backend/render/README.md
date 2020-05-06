@@ -92,8 +92,8 @@ The structure of an output JSON file is shown below as an equivalent JavaScript 
                 papers: [
                     {
                         prob: 0.2819, // probability of this paper contained in the subcluster (?)
-                        x: 0.12701737873157576, // center of this paper in a domain [-0.5, 0.5]
-                        y: 0.00988538632014025, // center of this paper in a domain [-0.5, 0.5]
+                        x: 0.12701737873157576, // center of this paper
+                        y: 0.00988538632014025, // center of this paper
                         r: 0.01, // radius of this paper
                         paper_id: "0015023cc06b5362d332b3baf348d11567ca2fbb", // SHA256 hash of this paper
                         title: "The RNA pseudoknots in foot-and-mouth disease virus are dispensable for genome replication but essential for the production of infectious virus. 2 3" // title of this paper
