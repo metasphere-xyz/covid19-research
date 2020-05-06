@@ -68,6 +68,8 @@ export async function render (data) {
 /**
  * Makes `d3-force` nodes to arrange clusters.
  *
+ * This function may be applied to both of a cluster and a subcluster.
+ *
  * @param {object} data
  *
  *   Data of clusters.
@@ -83,6 +85,7 @@ function makeClusterNodes (data) {
   for (let clusterI = 0; clusterI < numClusters; ++clusterI) {
     const paper = data.papers[clusterI]
     clusterNodes[clusterI] = {
+      topicId: data.topic[clusterI],
       x: data.x[clusterI],
       y: data.y[clusterI],
       size: 0.25 * Math.sqrt(paper.num_papers / totalNumPapers),
@@ -416,12 +419,12 @@ function renderPaperProbabilityContours (clusterNode) {
   // initializes grids
   const numGridRows = 80
   const numGridColumns = 80
-  const innerMargin = 0.2
+  const innerPadding = 0.2
   const grids = initializePaperProbabilityGrids(numGridRows, numGridColumns)
   // puts papers into grids
   clusterNode.subclusters.forEach(subcluster => {
     const { papers } = subcluster
-    const innerR = subcluster.size * (1.0 - innerMargin)
+    const innerR = subcluster.size * (1.0 - innerPadding)
     const innerD = 2.0 * innerR
     const minPaperX = d3Min(papers.map(p => p.x - p.r))
     const maxPaperX = d3Max(papers.map(p => p.x + p.r))
@@ -455,6 +458,7 @@ function renderPaperProbabilityContours (clusterNode) {
     return contourGenerator.contour(gridProbs, threshold)
   })
   clusterNode.probabilityContours = {
+    innerPadding,
     numGridRows,
     numGridColumns,
     contours
