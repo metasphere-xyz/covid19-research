@@ -292,7 +292,9 @@ function makePaperNodes (papers) {
       prob: prob,
       x: distance * Math.cos(angle),
       y: distance * Math.sin(angle),
-      r: radius
+      r: radius,
+      paper_id: papers.paper_id[i],
+      title: papers.title[i]
     }
   })
 }
@@ -449,11 +451,14 @@ function renderPaperProbabilityContours (clusterNode) {
     .size([numGridColumns, numGridRows])
   const thresholds = Array.from({ length: 8 }).map((_, i) => (i + 1) * 0.1)
   const gridProbs = grids.map(grid => grid.prob())
-  console.log(gridProbs)
   const contours = thresholds.map(threshold => {
     return contourGenerator.contour(gridProbs, threshold)
   })
-  clusterNode.contours = contours
+  clusterNode.probabilityContours = {
+    numGridRows,
+    numGridColumns,
+    contours
+  }
 }
 
 /**
