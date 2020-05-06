@@ -1,0 +1,36 @@
+{
+  "name": "prerender",
+  "version": "0.1.0",
+  "description": "Pre-renders landforms",
+  "private": true,
+  "main": "dist/index.js",
+  "scripts": {
+    "start": "node dist/index.js",
+    "build": "webpack",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/metasphere-xyz/covid19-research.git"
+  },
+  "keywords": [
+    "JavaScript",
+    "D3",
+    "metasphere"
+  ],
+  "author": "Kikuo Emoto <kikuomax@gmail.com>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/metasphere-xyz/covid19-research/issues"
+  },
+  "homepage": "https://github.com/metasphere-xyz/covid19-research#readme",
+  "devDependencies": {
+    "commander": "^5.1.0",
+    "d3-array": "^2.4.0",
+    "d3-contour": "^1.3.2",
+    "d3-force": "^2.0.1",
+    "d3-scale": "^3.2.1",
+    "webpack": "^4.43.0",
+    "webpack-cli": "^3.3.11"
+  }
+}
