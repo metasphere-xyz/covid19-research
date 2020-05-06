@@ -161,6 +161,20 @@ export default {
       const baseScaleR = d3.scaleLinear()
         .domain([0.0, 1.0])
         .range([0.0, this.screenView.scale])
+      // filters out invisible clusters
+      const visibleClusters = clusters.filter(cluster => {
+        const cX = baseProjectX(cluster.x)
+        const cY = baseProjectY(cluster.y)
+        const r = baseScaleR(cluster.size)
+        const minX = cX - r
+        const maxX = cX + r
+        const minY = cY - r
+        const maxY = cY + r
+        return (maxX > 0) &&
+          (minX < this.svg.width) &&
+          (maxY > 0) &&
+          (minY < this.svg.height)
+      })
       // removes the contents
       // this improves the speed to update the screen
       svg.select('g.base-pane')
@@ -169,14 +183,14 @@ export default {
         .attr('class', 'base-pane')
       // renders clusters
       contents.selectAll('circle.cluster')
-        .data(clusters)
+        .data(visibleClusters)
         .join('circle')
           .attr('class', 'cluster')
           .attr('cx', d => baseProjectX(d.x))
           .attr('cy', d => baseProjectY(d.y))
           .attr('r', d => baseScaleR(d.size))
       // renders subclusters
-      clusters.forEach((cluster, i) => {
+      visibleClusters.forEach((cluster, i) => {
         const clusterId = `cluster-${i}`
         const clusterX = baseProjectX(cluster.x)
         const clusterY = baseProjectY(cluster.y)
@@ -190,8 +204,22 @@ export default {
         const clusterScaleR = d3.scaleLinear()
           .domain([0.0, 0.5])
           .range([0.0, clusterR])
+        // filters out invisible subclusters
+        const visibleSubclusters = cluster.subclusters.filter(subcluster => {
+          const cX = clusterProjectX(subcluster.x)
+          const cY = clusterProjectY(subcluster.y)
+          const r = clusterScaleR(subcluster.size)
+          const minX = cX - r
+          const maxX = cX + r
+          const minY = cY - r
+          const maxY = cY + r
+          return (maxX > 0) &&
+            (minX < this.svg.width) &&
+            (maxY > 0) &&
+            (minY < this.svg.height)
+        })
         contents.selectAll(`circle.cluster.subcluster.${clusterId}`)
-          .data(cluster.subclusters)
+          .data(visibleSubclusters)
           .join('circle')
             .attr('class', `cluster subcluster ${clusterId}`)
             .attr('cx', d => clusterProjectX(d.x))
@@ -218,6 +246,47 @@ export default {
             .attr('class', `probability-contour ${clusterId}`)
             .attr('d', d => geoPath(d))
             .attr('fill', d => d3.interpolateTurbo(d.value))
+        // renders individual papers if zoomed enough
+        if (this.screenView.scale >= 6000) {
+          const innerMargin = 0.2
+          visibleSubclusters.forEach((subcluster, j) => {
+            const subclusterId = `subcluster-${i}-${j}`
+            const { papers } = subcluster
+            const subclusterX = clusterProjectX(subcluster.x)
+            const subclusterY = clusterProjectY(subcluster.y)
+            const subclusterR = clusterScaleR(subcluster.size)
+            const innerR = subclusterR * (1.0 - innerMargin)
+            const paperMinX = d3.min(papers.map(p => p.x - p.r))
+            const paperMaxX = d3.max(papers.map(p => p.x + p.r))
+            const paperMinY = d3.min(papers.map(p => p.y - p.r))
+            const paperMaxY = d3.max(papers.map(p => p.y + p.r))
+            const paperProjectX = d3.scaleLinear()
+              .domain([paperMinX, paperMaxX])
+              .range([subclusterX - innerR, subclusterX + innerR])
+            const paperProjectY = d3.scaleLinear()
+              .domain([paperMaxY, paperMinY]) // upside down
+              .range([subclusterY - innerR, subclusterY + innerR])
+            contents.selectAll(`circle.paper-dot.${subclusterId}`)
+              .data(papers)
+              .join('circle')
+                .attr('class', `paper-dot ${subclusterId}`)
+                .attr('cx', d => paperProjectX(d.x))
+                .attr('cy', d => paperProjectY(d.y))
+                .attr('r', 2.5)
+                .on('pointerover', function (d) {
+                  if (process.env.NODE_ENV !== 'production') {
+                    console.log('pointerover', d)
+                  }
+                  this.classList.add('highlighted')
+                })
+                .on('pointerout', function (d) {
+                  if (process.env.NODE_ENV !== 'production') {
+                    console.log('pointerout', d)
+                  }
+                  this.classList.remove('highlighted')
+                })
+          })
+        }
       })
       if (process.env.NODE_ENV !== 'production'){
         console.log('finish renderClusters')
@@ -335,6 +404,9 @@ export default {
       this.screenView.scale *= factor
       this.screenView.translateX += (1.0 - factor) * dX
       this.screenView.translateY += (1.0 - factor) * dY
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('updated scale', this.screenView.scale)
+      }
     }
   }
 }
@@ -373,8 +445,12 @@ $true-navbar-height: $navbar-height + ($navbar-padding-vertical / 2);
 
 circle {
   &.paper-dot {
+    stroke: none;
+    fill: black;
+    fill-opacity: 1.0;
+
     &.highlighted {
-      stroke: black;
+      stroke: yellow;
       stroke-opacity: 0.7;
       stroke-width: 3;
     }
