@@ -191,8 +191,8 @@ export default {
           .attr('cy', d => baseProjectY(d.y))
           .attr('r', d => baseScaleR(d.size))
       // renders subclusters
-      visibleClusters.forEach((cluster, i) => {
-        const clusterId = `cluster-${i}`
+      visibleClusters.forEach(cluster => {
+        const clusterId = `cluster-${cluster.topicId}`
         const clusterX = baseProjectX(cluster.x)
         const clusterY = baseProjectY(cluster.y)
         const clusterR = baseScaleR(cluster.size)
@@ -228,6 +228,7 @@ export default {
             .attr('r', d => clusterScaleR(d.size))
         // renders probability contours
         const {
+          innerPadding, // necessary to distribute papers inside subclusters
           numGridRows,
           numGridColumns,
           contours
@@ -252,14 +253,14 @@ export default {
             .attr('fill', d => d3.interpolateTurbo(d.value))
         // renders individual papers if zoomed enough
         if (this.screenView.scale >= 6000) {
-          const innerMargin = 0.2
-          visibleSubclusters.forEach((subcluster, j) => {
-            const subclusterId = `subcluster-${i}-${j}`
+          visibleSubclusters.forEach(subcluster => {
+            const subclusterId =
+              `subcluster-${cluster.topicId}-${subcluster.topicId}`
             const { papers } = subcluster
             const subclusterX = clusterProjectX(subcluster.x)
             const subclusterY = clusterProjectY(subcluster.y)
             const subclusterR = clusterScaleR(subcluster.size)
-            const innerR = subclusterR * (1.0 - innerMargin)
+            const innerR = subclusterR * (1.0 - innerPadding)
             const paperMinX = d3.min(papers.map(p => p.x - p.r))
             const paperMaxX = d3.max(papers.map(p => p.x + p.r))
             const paperMinY = d3.min(papers.map(p => p.y - p.r))
