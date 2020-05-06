@@ -151,6 +151,7 @@ export default {
       if (process.env.NODE_ENV !== 'production') {
         console.log('start renderClusters')
       }
+      const vm = this
       const svg = d3.select(this.$refs['svg'])
       const baseProjectX = d3.scaleLinear()
         .domain([-0.5, 0.5])
@@ -226,8 +227,11 @@ export default {
             .attr('cy', d => clusterProjectY(d.y))
             .attr('r', d => clusterScaleR(d.size))
         // renders probability contours
-        const numGridRows = 80
-        const numGridColumns = 80
+        const {
+          numGridRows,
+          numGridColumns,
+          contours
+        } = cluster.probabilityContours
         const geoProjectX = d3.scaleLinear()
           .domain([0, numGridColumns])
           .range([clusterX - clusterR, clusterX + clusterR])
@@ -241,7 +245,7 @@ export default {
             }
           }))
         contents.selectAll(`path.probability-contour.${clusterId}`)
-          .data(cluster.contours)
+          .data(contours)
           .join('path')
             .attr('class', `probability-contour ${clusterId}`)
             .attr('d', d => geoPath(d))
@@ -275,15 +279,28 @@ export default {
                 .attr('r', 2.5)
                 .on('pointerover', function (d) {
                   if (process.env.NODE_ENV !== 'production') {
-                    console.log('pointerover', d)
+                    console.log(`pointerover: ${d.paper_id}`)
                   }
                   this.classList.add('highlighted')
                 })
                 .on('pointerout', function (d) {
                   if (process.env.NODE_ENV !== 'production') {
-                    console.log('pointerout', d)
+                    console.log(`pointerout: ${d.paper_id}`)
                   }
                   this.classList.remove('highlighted')
+                })
+                .on('pointerdown', function (d) {
+                  if (process.env.NODE_ENV !== 'production') {
+                    console.log(`pointerdown: ${d.paper_id}`)
+                  }
+                  if (vm.selected.node != null) {
+                    vm.selected.node.classList.remove('selected')
+                  }
+                  vm.selected = {
+                    node: this,
+                    article: d
+                  }
+                  this.classList.add('selected')
                 })
           })
         }
