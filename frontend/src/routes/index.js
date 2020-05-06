@@ -10,7 +10,7 @@ import VueRouter from 'vue-router'
 Vue.use(VueRouter)
 
 import Intro from '@components/intro'
-import Explorer from '@components/explorer2'
+import Explorer from '@components/explorer'
 
 const routes = [
   {
