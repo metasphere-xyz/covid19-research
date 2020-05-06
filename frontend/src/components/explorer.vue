@@ -43,24 +43,16 @@ import Paper from '@components/paper'
 /**
  * Example cluster and paper information.
  *
- * @namespace Example
+ * @namespace Explorer
  *
- * @module: components
+ * @module components
  */
 export default {
-  name: 'Example',
+  name: 'Expolorer',
   components: {
     Paper
   },
   props: {
-    numPoints: {
-      type: Number,
-      default: 40
-    },
-    numReducedDots: {
-      type: Number,
-      default: 2000
-    },
     zoomFactor: {
       type: Number,
       default: 0.95
@@ -78,129 +70,242 @@ export default {
       },
       // clusters and paper
       clusters: [],
-      reducedClusters: [],
       selected: {
         node: null,
         article: null
       },
       // visible region
-      domainX: [-25, 25],
-      domainY: [-25, 25],
+      screenView: {
+        scale: 800, // 1 (data) : 800 (screen)
+        translateX: 0,
+        translateY: 0
+      },
       // manages a drag event
       drag: {
         isActive: false,
         lastX: 0,
         lastY: 0
-      },
-      // rendering function that delays.
-      // rendering is postponed every time it is called.
-      delayRenderClusters: null
+      }
     }
   },
   computed: {
-    domainWidth () {
-      return this.domainX[1] - this.domainX[0]
+    svgCenterX () {
+      return this.svg.width * 0.5
     },
-    domainHeight () {
-      return this.domainY[1] - this.domainY[0]
+    svgCenterY () {
+      return this.svg.height * 0.5
+    },
+    // x range of cluster-to-screen projection.
+    // fx: [-0.5, 0.5] --> screenViewXRange
+    screenViewXRange () {
+      const {
+        scale,
+        translateX
+      } = this.screenView
+      const halfScale = scale * 0.5
+      return [
+        (this.svgCenterX + translateX) - halfScale,
+        (this.svgCenterX + translateX) + halfScale
+      ]
+    },
+    // y range of cluser-to-screen projection.
+    // fy: [-0.5, 0.5] --> screenViewYRange
+    screenViewYRange () {
+      const {
+        scale,
+        translateY
+      } = this.screenView
+      const halfScale = scale * 0.5
+      return [
+        (this.svgCenterY + translateY) - halfScale,
+        (this.svgCenterY + translateY) + halfScale
+      ]
     }
   },
   created () {
-    this.promiseReady = fetch('./source-data.csv')
+    this.promiseReady = fetch('./cluster-data.json')
       .then(response => {
-        return response.text()
-          .then(text => {
+        return response.json()
+          .then(clusters => {
             if (process.env.NODE_ENV !== 'production') {
-              console.log(`loaded: ${text.length}`)
+              console.log(`loaded cluster data`)
             }
-            this.clusters = d3.csvParse(text, d => {
-              return {
-                ...d,
-                x: +d.x,
-                y: +d.y,
-                title: d.titles,
-                labelId: +(d.labels.slice(2)) // omits 'C-'
-              }
-            })
-            if (process.env.NODE_ENV !== 'production') {
-              console.log(`parsed: ${this.clusters.length}`)
-              console.log(`x: ${d3.extent(this.clusters, c => c.x)}`)
-              console.log(`y: ${d3.extent(this.clusters, c => c.y)}`)
-              console.log(`labelId: ${d3.extent(this.clusters, c => c.labelId)}`)
-            }
-            this.reducedClusters =
-              arrays.chooseRandomly(this.clusters, this.numReducedDots)
-            // at this point the Vue instance might not be ready
-            this.isLoadingData = false
+            this.clusters = clusters
             this.renderClusters(this.clusters)
           })
+      })
+      .catch(err => {
+        console.error(err)
+      })
+      .finally(() => {
+        this.isLoadingData = false
       })
   },
   mounted () {
     const container = this.$refs['svg-container']
     this.svg.width = container.clientWidth
     this.svg.height = container.clientHeight
-    this.delayRenderClusters = debounce(() => {
-      this.renderClusters(this.clusters)
-    }, 250)
   },
   methods: {
     renderClusters (clusters) {
       if (process.env.NODE_ENV !== 'production') {
         console.log('start renderClusters')
       }
-      const svg = d3.select(this.$refs['svg'])
-      const xScale = d3.scaleLinear()
-        .domain(this.domainX)
-        .range([0, this.svg.width])
-      const yScale = d3.scaleLinear()
-        .domain(this.domainY)
-        .range([0, this.svg.height])
-      const colorScale = d3.scaleLinear()
-        .domain(d3.extent(this.clusters, c => c.labelId))
-        .range([0, 1])
-      // removes the contents
-      svg.select('g')
-        .remove()
-      // renders new contents
-      const contents = svg.append('g')
       const vm = this
-      contents.selectAll('circle')
-        .data(clusters)
+      const svg = d3.select(this.$refs['svg'])
+      const baseProjectX = d3.scaleLinear()
+        .domain([-0.5, 0.5])
+        .range(this.screenViewXRange)
+      const baseProjectY = d3.scaleLinear()
+        .domain([0.5, -0.5]) // upside down
+        .range(this.screenViewYRange)
+      const baseScaleR = d3.scaleLinear()
+        .domain([0.0, 1.0])
+        .range([0.0, this.screenView.scale])
+      // filters out invisible clusters
+      const visibleClusters = clusters.filter(cluster => {
+        const cX = baseProjectX(cluster.x)
+        const cY = baseProjectY(cluster.y)
+        const r = baseScaleR(cluster.size)
+        const minX = cX - r
+        const maxX = cX + r
+        const minY = cY - r
+        const maxY = cY + r
+        return (maxX > 0) &&
+          (minX < this.svg.width) &&
+          (maxY > 0) &&
+          (minY < this.svg.height)
+      })
+      // removes the contents
+      // this improves the speed to update the screen
+      svg.select('g.base-pane')
+        .remove()
+      const contents = svg.append('g')
+        .attr('class', 'base-pane')
+      // renders clusters
+      contents.selectAll('circle.cluster')
+        .data(visibleClusters)
         .join('circle')
-          .attr('class', d => {
-            const base = 'paper-dot'
-            return base + ((d === vm.selected.article) ? ' selected' : '')
+          .attr('class', 'cluster')
+          .attr('cx', d => baseProjectX(d.x))
+          .attr('cy', d => baseProjectY(d.y))
+          .attr('r', d => baseScaleR(d.size))
+      // renders subclusters
+      visibleClusters.forEach(cluster => {
+        const clusterId = `cluster-${cluster.topicId}`
+        const clusterX = baseProjectX(cluster.x)
+        const clusterY = baseProjectY(cluster.y)
+        const clusterR = baseScaleR(cluster.size)
+        const clusterProjectX = d3.scaleLinear()
+          .domain([-0.5, 0.5])
+          .range([clusterX - clusterR, clusterX + clusterR])
+        const clusterProjectY = d3.scaleLinear()
+          .domain([0.5, -0.5]) // upside down
+          .range([clusterY - clusterR, clusterY + clusterR])
+        const clusterScaleR = d3.scaleLinear()
+          .domain([0.0, 0.5])
+          .range([0.0, clusterR])
+        // filters out invisible subclusters
+        const visibleSubclusters = cluster.subclusters.filter(subcluster => {
+          const cX = clusterProjectX(subcluster.x)
+          const cY = clusterProjectY(subcluster.y)
+          const r = clusterScaleR(subcluster.size)
+          const minX = cX - r
+          const maxX = cX + r
+          const minY = cY - r
+          const maxY = cY + r
+          return (maxX > 0) &&
+            (minX < this.svg.width) &&
+            (maxY > 0) &&
+            (minY < this.svg.height)
+        })
+        contents.selectAll(`circle.cluster.subcluster.${clusterId}`)
+          .data(visibleSubclusters)
+          .join('circle')
+            .attr('class', `cluster subcluster ${clusterId}`)
+            .attr('cx', d => clusterProjectX(d.x))
+            .attr('cy', d => clusterProjectY(d.y))
+            .attr('r', d => clusterScaleR(d.size))
+        // renders probability contours
+        const {
+          innerPadding, // necessary to distribute papers inside subclusters
+          numGridRows,
+          numGridColumns,
+          contours
+        } = cluster.probabilityContours
+        const geoProjectX = d3.scaleLinear()
+          .domain([0, numGridColumns])
+          .range([clusterX - clusterR, clusterX + clusterR])
+        const geoProjectY = d3.scaleLinear()
+          .domain([numGridRows, 0]) // upside down
+          .range([clusterY - clusterR, clusterY + clusterR])
+        const geoPath = d3.geoPath()
+          .projection(d3.geoTransform({
+            point: function (x, y) {
+              this.stream.point(geoProjectX(x), geoProjectY(y))
+            }
+          }))
+        contents.selectAll(`path.probability-contour.${clusterId}`)
+          .data(contours)
+          .join('path')
+            .attr('class', `probability-contour ${clusterId}`)
+            .attr('d', d => geoPath(d))
+            .attr('fill', d => d3.interpolateTurbo(d.value))
+        // renders individual papers if zoomed enough
+        if (this.screenView.scale >= 6000) {
+          visibleSubclusters.forEach(subcluster => {
+            const subclusterId =
+              `subcluster-${cluster.topicId}-${subcluster.topicId}`
+            const { papers } = subcluster
+            const subclusterX = clusterProjectX(subcluster.x)
+            const subclusterY = clusterProjectY(subcluster.y)
+            const subclusterR = clusterScaleR(subcluster.size)
+            const innerR = subclusterR * (1.0 - innerPadding)
+            const paperMinX = d3.min(papers.map(p => p.x - p.r))
+            const paperMaxX = d3.max(papers.map(p => p.x + p.r))
+            const paperMinY = d3.min(papers.map(p => p.y - p.r))
+            const paperMaxY = d3.max(papers.map(p => p.y + p.r))
+            const paperProjectX = d3.scaleLinear()
+              .domain([paperMinX, paperMaxX])
+              .range([subclusterX - innerR, subclusterX + innerR])
+            const paperProjectY = d3.scaleLinear()
+              .domain([paperMaxY, paperMinY]) // upside down
+              .range([subclusterY - innerR, subclusterY + innerR])
+            contents.selectAll(`circle.paper-dot.${subclusterId}`)
+              .data(papers)
+              .join('circle')
+                .attr('class', `paper-dot ${subclusterId}`)
+                .attr('cx', d => paperProjectX(d.x))
+                .attr('cy', d => paperProjectY(d.y))
+                .attr('r', 2.5)
+                .on('pointerover', function (d) {
+                  if (process.env.NODE_ENV !== 'production') {
+                    console.log(`pointerover: ${d.paper_id}`)
+                  }
+                  this.classList.add('highlighted')
+                })
+                .on('pointerout', function (d) {
+                  if (process.env.NODE_ENV !== 'production') {
+                    console.log(`pointerout: ${d.paper_id}`)
+                  }
+                  this.classList.remove('highlighted')
+                })
+                .on('pointerdown', function (d) {
+                  if (process.env.NODE_ENV !== 'production') {
+                    console.log(`pointerdown: ${d.paper_id}`)
+                  }
+                  if (vm.selected.node != null) {
+                    vm.selected.node.classList.remove('selected')
+                  }
+                  vm.selected = {
+                    node: this,
+                    article: d
+                  }
+                  this.classList.add('selected')
+                })
           })
-          .attr('r', 3)
-          .attr('cx', d => xScale(d.x))
-          .attr('cy', d => yScale(d.y))
-          .attr('fill', d => d3.interpolateTurbo(colorScale(d.labelId)))
-          .on('pointerover', function (d) {
-            if (process.env.NODE_ENV !== 'production') {
-              console.log(`pointerover: ${d.paper_id}`)
-            }
-            this.classList.add('highlighted')
-          })
-          .on('pointerout', function (d) {
-            if (process.env.NODE_ENV !== 'production') {
-              console.log(`pointerout: ${d.paper_id}`)
-            }
-            this.classList.remove('highlighted')
-          })
-          .on('pointerdown', function (d) {
-            if (process.env.NODE_ENV !== 'production') {
-              console.log(`pointerdown: ${d.paper_id}`)
-            }
-            if (vm.selected.node != null) {
-              vm.selected.node.classList.remove('selected')
-            }
-            vm.selected = {
-              node: this,
-              article: d
-            }
-            this.classList.add('selected')
-          })
+        }
+      })
       if (process.env.NODE_ENV !== 'production'){
         console.log('finish renderClusters')
       }
@@ -222,11 +327,11 @@ export default {
         return
       }
       const { clientX, clientY } = event
-      const normalDX = (clientX - this.drag.lastX) / this.svg.width
-      const normalDY = (clientY - this.drag.lastY) / this.svg.height
+      const dX = clientX - this.drag.lastX
+      const dY = clientY - this.drag.lastY
       this.drag.lastX = clientX
       this.drag.lastY = clientY
-      this.pan(-normalDX, -normalDY) // moves opposite
+      this.pan(dX, dY)
       event.preventDefault()
     },
     onPointerUp (event) {
@@ -244,50 +349,82 @@ export default {
       }
       this.drag.isActive = false
     },
-    pan (normalDX, normalDY) {
-      const dX = normalDX * this.domainWidth
-      const dY = normalDY * this.domainHeight
-      this.domainX = this.domainX.map(x => x + dX)
-      this.domainY = this.domainY.map(y => y + dY)
-      this.renderClusters(this.reducedClusters)
-      this.delayRenderClusters()
+    pan (dX, dY) {
+      this.screenView.translateX += dX
+      this.screenView.translateY += dY
+      this.renderClusters(this.clusters)
     },
     onWheel (event) {
       const container = this.$refs['svg-container']
       const { target, clientX, clientY } = event
       const { left, top } = container.getBoundingClientRect()
-      const normalX = (clientX - left) / this.svg.width
-      const normalY = (clientY - top) / this.svg.height
+      const zoomAtX = clientX - left
+      const zoomAtY = clientY - top
       if (process.env.NODE_ENV !== 'production') {
-        console.log('onWheel', normalX, normalY)
+        console.log('onWheel', zoomAtX, zoomAtY)
       }
       if (event.deltaY < 0) {
-        this.zoomIn(normalX, normalY)
+        this.zoomIn(zoomAtX, zoomAtY)
       } else {
-        this.zoomOut(normalX, normalY)
+        this.zoomOut(zoomAtX, zoomAtY)
       }
-      this.renderClusters(this.reducedClusters)
-      this.delayRenderClusters()
+      this.renderClusters(this.clusters)
     },
-    zoomIn (normalX, normalY) {
-      this.zoom(normalX, normalY, this.zoomFactor)
+    zoomIn (zoomAtX, zoomAtY) {
+      this.zoom(zoomAtX, zoomAtY, 1.0 / this.zoomFactor)
     },
-    zoomOut (normalX, normalY) {
-      this.zoom(normalX, normalY, 1.0 / this.zoomFactor)
+    zoomOut (zoomAtX, zoomAtY) {
+      this.zoom(zoomAtX, zoomAtY, this.zoomFactor)
     },
-    zoom (normalX, normalY, factor) {
-      const centerX = (normalX * this.domainWidth) + this.domainX[0]
-      const centerY = (normalY * this.domainHeight) + this.domainY[0]
-      const newWidth = factor * this.domainWidth
-      const newHeight = factor * this.domainHeight
-      this.domainX= [
-        centerX - (normalX * newWidth),
-        centerX + ((1.0 - normalX) * newWidth)
-      ]
-      this.domainY= [
-        centerY - (normalY * newHeight),
-        centerY + ((1.0 - normalY) * newHeight)
-      ]
+    zoom (zoomAtX, zoomAtY, factor) {
+      // algorithm
+      //
+      // projection from cluster to screen
+      // f: [-0.5, 0.5] --> [x0 - w/2, x0 + w/2]
+      // where
+      //   x0 = `screenView.translateX + svgCenterX`
+      //   w  = `screenView.scale`
+      //
+      // inverse projection; i.e., from screen to cluster
+      // F: [x0 - w/2, x0 + w/2] --> [-0.5, 0.5]
+      //
+      // projection after zooming will be
+      // f': [-0.5, 0.5] --> [x0' - w'/2, x0' + w'/2]
+      // F': [x0' - w'/2, x0' + w'/2] --> [-0.5, 0.5]
+      // where
+      //   x0' = ?
+      //   w'  = αw
+      //   α   = `factor`
+      //
+      // x0' is determined so that F(x) = F'(x)
+      // where
+      //   x = `zoomAtX`
+      //
+      // F(x)  = (x - x0)/w - 0.5
+      // F'(x) = (x - x0')/αw - 0.5
+      //
+      // (x - x0)/w - 0.5 = (x - x0')/αw - 0.5
+      //       (x - x0)/w = (x - x0')/αw
+      //        α(x - x0) = x - x0'
+      // then
+      // x0' = x - α(x - x0)
+      //     = (x - x0) - α(x - x0) + x0
+      //     = (1 - α)(x - x0) + x0
+      //     = (1 - α)`dX` + x0
+      //
+      // a similar algorithm is applied to the y projection
+      const {
+        translateX,
+        translateY
+      } = this.screenView
+      const dX = zoomAtX - (translateX + this.svgCenterX)
+      const dY = zoomAtY - (translateY + this.svgCenterY)
+      this.screenView.scale *= factor
+      this.screenView.translateX += (1.0 - factor) * dX
+      this.screenView.translateY += (1.0 - factor) * dY
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('updated scale', this.screenView.scale)
+      }
     }
   }
 }
@@ -326,8 +463,12 @@ $true-navbar-height: $navbar-height + ($navbar-padding-vertical / 2);
 
 circle {
   &.paper-dot {
+    stroke: none;
+    fill: black;
+    fill-opacity: 1.0;
+
     &.highlighted {
-      stroke: black;
+      stroke: yellow;
       stroke-opacity: 0.7;
       stroke-width: 3;
     }
@@ -336,6 +477,23 @@ circle {
       stroke-opacity: 0.7;
       stroke-width: 3;
     }
+  }
+}
+
+circle {
+  &.cluster {
+    stroke: black;
+    stroke-width: 1.0;
+    stroke-dasharray: 1 1;
+    fill: white;
+    fill-opacity: 0.0;
+  }
+}
+
+path {
+  &.probability-contour {
+    stroke: black;
+    stroke-width: 0.5;
   }
 }
 </style>

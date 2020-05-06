@@ -64,13 +64,25 @@ export default {
       return (this.paper && this.paper.paper_id) || null
     },
     title () {
-      return (this.paper && this.paper.title) || 'Not Selected'
+      if (this.paper) {
+        return this.paper.title || 'N/A'
+      } else {
+        return 'Not Selected'
+      }
     },
     authors () {
-      return (this.paper && this.paper.authors) || 'Not Selected'
+      if (this.paper) {
+        return this.paper.authors || 'N/A'
+      } else {
+        return 'Not Selected'
+      }
     },
     abstract () {
-      return (this.paper && this.paper.abstract) || 'Not Selected'
+      if (this.paper) {
+        return this.paper.abstract || 'N/A'
+      } else {
+        return 'Not Selected'
+      }
     },
     fullTextToggleButtonTitle () {
       return this.isFullText ? 'View Abstract' : 'View Full Text'
