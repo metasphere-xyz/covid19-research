@@ -6,10 +6,11 @@
 
 import {
   max as d3Max,
+  mean as d3Mean,
   min as d3Min
 } from 'd3-array'
 import {
-  contours as d3Contours
+  contourDensity
 } from 'd3-contour'
 import {
   forceCollide,
@@ -19,8 +20,27 @@ import {
   forceY
 } from 'd3-force'
 import {
+  polygonContains
+} from 'd3-polygon'
+import {
   scaleLinear
 } from 'd3-scale'
+
+// configurations
+const config = {
+  // scale to be applied to cluster distances.
+  clusterDistanceScale: 50.0,
+  // scale to be applied to subcluster distances.
+  subclusterDistanceScale: 5.0,
+  // padding inside a cluster.
+  clusterPadding: 1.0,
+  // padding inside a subcluster.
+  subclusterPadding: 0.2,
+  // margin of a paper density estimator
+  paperDensityMargin: 0.1,
+  // margin of an island contour estimator
+  islandContourMargin: 0.5
+}
 
 /**
  * Renders given data.
@@ -34,35 +54,135 @@ import {
  *   Rendered data.
  */
 export async function render (data) {
-  const clusterNodes = makeClusterNodes(data)
-  const subclusterNodesList = makeSubclusterNodesList(data)
+  // distributes papers
   const paperClusterList = makePaperClusters(data)
-  return arrangeClusters(clusterNodes)
-    .then(clusterNodes => {
-      return Promise.all(subclusterNodesList.map(arrangeClusters))
-        .then(subclusterNodesList => {
-          // associates each cluster and its subclusters
-          clusterNodes.forEach((node, i) => {
-            node.subclusters = subclusterNodesList[i]
-          })
-          return clusterNodes
-        })
+  return arrangePaperClusters(paperClusterList)
+    .then(paperClusterList => {
+      // determines size of subclusters and arranges subclusters
+      const subclusterNodesList =
+        makeSubclusterNodesList(data, paperClusterList)
+      return arrangeAllSubclusters(subclusterNodesList)
+    })
+    .then(subclusterNodesList => {
+      // determines size of clusters and arranges clusters
+      const clusterNodes = makeClusterNodes(data, subclusterNodesList)
+      return arrangeClusters(clusterNodes)
     })
     .then(clusterNodes => {
-      console.log('arranging paper clusters')
-      return arrangePaperClusters(paperClusterList)
-        .then(paperClusterList => {
-          // associates each subcluster and its papers
-          return mergeClustersAndPaperDistributions(
-            clusterNodes,
-            paperClusterList)
-        })
-    })
-    .then(clusterNodes => {
-      console.log('rendering paper probability contours')
-      renderAllPaperProbabilityContours(clusterNodes)
+      // renders density and island contours
+      renderPaperDensityContoursInClusters(clusterNodes)
+      renderIslandContours(clusterNodes)
       return clusterNodes
     })
+}
+
+/**
+ * Makes paper clusters.
+ *
+ * @param {object} data
+ *
+ *   Data from which papers in each cluster are to be obtained.
+ *
+ * @return {array}
+ *
+ *   Array of paper sets of individual clusters.
+ */
+function makePaperClusters (data) {
+  return data.second_layer.map(makePaperNodesList)
+}
+
+/**
+ * Makes clusters of nodes to arrange papers.
+ *
+ * @param {object} cluster
+ *
+ *   Cluster from which papers in each subcluster are to be obtained.
+ *
+ * @return {array}
+ *
+ *   Array of paper nodes of individual subclusters.
+ */
+function makePaperNodesList (cluster) {
+  return cluster.papers.map(makePaperNodes)
+}
+
+/**
+ * Makes a list of subcluster nodes.
+ *
+ * @param {object} data
+ *
+ *   Data of clusters.
+ *
+ * @param {array} paperClusterList
+ *
+ *   Array of paper sets in individual clusters.
+ *
+ * @return {array}
+ *
+ *   List of subcluster nodes.
+ */
+function makeSubclusterNodesList (data, paperClusterList) {
+  return data.second_layer.map((cluster, i) => {
+    return makeSubclusterNodes(cluster, paperClusterList[i])
+  })
+}
+
+/**
+ * Makes nodes to arrange papers.
+ *
+ * @param {array} papers
+ *
+ *   Papers in a subcluster.
+ *
+ * @return {array}
+ *
+ *   Nodes to arrange papers.
+ */
+function makePaperNodes (papers) {
+  const baseRadius = 0.05
+  const numPapers = papers.prob.length
+  const angleRate = (2.0 * Math.PI) / numPapers
+  return papers.prob.map((prob, i) => {
+    const angle = i * angleRate
+    const distance = Math.pow(1.0 - prob, 2)
+    return {
+      prob: prob,
+      x: distance * Math.cos(angle),
+      y: distance * Math.sin(angle),
+      r: baseRadius * Math.pow(1.0 - prob, 2),
+      paper_id: papers.paper_id[i],
+      title: papers.title[i]
+    }
+  })
+}
+
+/**
+ * Makes `d3-force` nodes to arrange subclusters.
+ *
+ * @param {object} cluster
+ *
+ *   Cluster whose subclusters are to be arranged.
+ *
+ * @param {array} paperNodesList
+ *
+ *   List of paper sets in individual subclusters.
+ *
+ * @return {array}
+ *
+ *   `d3-force` nodes to arrange subclusters.
+ */
+function makeSubclusterNodes (cluster, paperNodesList) {
+  return paperNodesList.map((paperNodes, i) => {
+    const innerR = 0.5 * getBoundingSquareSize(paperNodes)
+    return {
+      topicId: cluster.topic[i],
+      x: cluster.x[i],
+      y: cluster.y[i],
+      r: innerR + config.subclusterPadding,
+      numPapers: paperNodes.length,
+      papers: paperNodes
+    }
+  })
 }
 
 /**
@@ -74,57 +194,26 @@ export async function render (data) {
  *
  *   Data of clusters.
  *
+ * @param {array} subclusterNodesList
+ *
+ *   List of subcluster sets in individual clusters.
+ *
  * @return {array}
  *
  *   `d3-force` nodes to arrange clusters.
  */
-function makeClusterNodes (data) {
-  const numClusters = data.x.length
-  const totalNumPapers = countPapers(data.papers)
-  const clusterNodes = new Array(numClusters)
-  for (let clusterI = 0; clusterI < numClusters; ++clusterI) {
-    const paper = data.papers[clusterI]
-    clusterNodes[clusterI] = {
-      topicId: data.topic[clusterI],
-      x: data.x[clusterI],
-      y: data.y[clusterI],
-      size: 0.25 * Math.sqrt(paper.num_papers / totalNumPapers),
-      numPapers: paper.num_papers
+function makeClusterNodes (data, subclusterNodesList) {
+  return subclusterNodesList.map((subclusterNodes, i) => {
+    const innerR = 0.5 * getBoundingSquareSize(subclusterNodes)
+    return {
+      topicId: data.topic[i],
+      x: data.x[i],
+      y: data.y[i],
+      r: innerR + config.clusterPadding,
+      numPapers: data.papers[i].num_papers,
+      subclusters: subclusterNodes
     }
-  }
-  return clusterNodes
-}
-
-/**
- * Count papers.
- *
- * @param {array} papers
- *
- *   Array of paper information objects that has the following field,
- *   - `num_papers`: {`number`} number of papers in a cluster.
- *
- * @return {number}
- *
- *   Total number of papers.
- */
-function countPapers (papers) {
-  return papers.reduce(
-    (sum, paper) => sum + paper.num_papers,
-    0
-  )
-}
-
-/**
- * Makes a list of subcluster nodes.
- *
- * @param {object} data
- *
- * @return {array}
- *
- *   List of subcluster nodes.
- */
-function makeSubclusterNodesList (data) {
-  return data.second_layer.map(makeClusterNodes)
+  })
 }
 
 /**
@@ -154,6 +243,47 @@ function arrangeClusters (nodes) {
 }
 
 /**
+ * Arranges all of given subcluster nodes.
+ *
+ * @param {array} nodesList
+ *
+ *   List of subcluster node arrays in individual clusters.
+ *
+ * @return {Promise}
+ *
+ *   Will be resolved to arranged subcluster nodes in individual clusters.
+ */
+function arrangeAllSubclusters (nodesList) {
+  return Promise.all(nodesList.map(arrangeSubclusters))
+}
+
+/**
+ * Arranges given subcluster nodes.
+ *
+ * @param {array} nodes
+ *
+ *   Nodes of subclusters to be arranged.
+ *
+ * @return {Promise}
+ *
+ *   Will be resolved to arranged subcluster nodes.
+ */
+function arrangeSubclusters (nodes) {
+  const force = initializeSubclusterArrangingForce(nodes)
+  let tickCount = 0
+  return new Promise(resolve => {
+    force
+      .on('tick', () => {
+        ++tickCount
+        if ((tickCount % 10) === 0) {
+          console.log(`tick: ${tickCount}`)
+        }
+      })
+      .on('end', () => resolve(nodes))
+  })
+}
+
+/**
  * Initializes a `d3-force` that arranges cluster nodes.
  *
  * @param {array} nodes
@@ -166,78 +296,84 @@ function arrangeClusters (nodes) {
  */
 function initializeClusterArrangingForce (nodes) {
   const collide = forceCollide()
-    .radius(node => node.size)
-  const center = forceBoundingBoxCenter()
+    .radius(d => d.r)
+    .iterations(10)
   const centerX = forceX()
-    .x(0)
   const centerY = forceY()
-    .y(0)
-  const links = calculateClusterNodeLinks(nodes)
-  const link = forceLink(links)
+  const center = forceBoundingBoxCenter()
+  const link = forceLink(makeClusterNodeLinks(nodes))
     .distance(link => link.distance)
     .strength(() => 0.5)
   return forceSimulation(nodes)
     .force('collide', collide)
-    .force('center', center)
     .force('centerX', centerX)
     .force('centerY', centerY)
+    .force('center', center)
     .force('link', link)
 }
 
 /**
- * Returns a `d3-force` force object that centers a bounding box.
- *
- * @return {function}
- *
- *   `d3-force` force object that centers a bounding box.
- */
-function forceBoundingBoxCenter () {
-  let _nodes
-
-  function force () {
-    const minX = d3Min(_nodes.map(node => node.x - node.size))
-    const maxX = d3Max(_nodes.map(node => node.x + node.size))
-    const minY = d3Min(_nodes.map(node => node.y - node.size))
-    const maxY = d3Max(_nodes.map(node => node.y + node.size))
-    const cX = minX + (0.5 * (maxX - minX))
-    const cY = minY + (0.5 * (maxY - minY))
-    _nodes.forEach(node => {
-      node.x -= cX
-      node.y -= cY
-    })
-  }
-
-  force.initialize = function (nodes) {
-    _nodes = nodes
-  }
-
-  return force
-}
-
-/**
- * Calculates cluster node links.
+ * Initializes a `d3-force` that arranges subcluster nodes.
  *
  * @param {array} nodes
  *
- *   Nodes whose links are to be calculated.
+ *   Nodes of subclusters.
+ *
+ * @return {object}
+ *
+ *   `d3-force.forceSimulation` object that arranges subcluster nodes.
+ */
+function initializeSubclusterArrangingForce (nodes) {
+  const collide = forceCollide()
+    .radius(d => d.r)
+    .iterations(10)
+  const centerX = forceX()
+  const centerY = forceY()
+  const center = forceBoundingBoxCenter()
+  const link = forceLink(makeSubclusterNodeLinks(nodes))
+    .distance(link => link.distance)
+    .strength(0.5)
+  return forceSimulation(nodes)
+    .force('collide', collide)
+    .force('centerX', centerX)
+    .force('centerY', centerY)
+    .force('center', center)
+    .force('link', link)
+}
+
+/**
+ * Makes cluster node links.
+ *
+ * @param {array} nodes
+ *
+ *   Nodes whose links are to be made.
  *
  * @return {array}
  *
  *   Links between cluster nodes.
  */
-function calculateClusterNodeLinks (nodes) {
+function makeClusterNodeLinks (nodes) {
+  const distanceScale = config.clusterDistanceScale
   const links = []
-  for (let i = 0; i < (nodes.length - 1); ++i) {
-    const { x: xI, y: yI } = nodes[i]
+  for (let i = 0; i < nodes.length; ++i) {
+    const {
+      x: iX,
+      y: iY,
+      r: iR
+    } = nodes[i]
     for (let j = i + 1; j < nodes.length; ++j) {
-      const { x: xJ, y: yJ } = nodes[j]
-      const dX = xJ - xI
-      const dY = yJ - yI
+      const {
+        x: jX,
+        y: jY,
+        r: jR
+      } = nodes[j]
+      const dX = jX - iX
+      const dY = jY - iY
       const distance = Math.sqrt((dX * dX) + (dY * dY))
       links.push({
         source: i,
         target: j,
-        distance
+        distance: (distanceScale * distance) + iR + jR
       })
     }
   }
@@ -245,61 +381,42 @@ function calculateClusterNodeLinks (nodes) {
 }
 
 /**
- * Makes paper clusters.
+ * Makes subcluster node links.
  *
- * @param {object} data
+ * @param {array} nodes
  *
- *   Data from which papers in each cluster are to be obtained.
- *
- * @return {array}
- *
- *   Array of paper sets of individual clusters.
- */
-function makePaperClusters (data) {
-  return data.second_layer.map(makePaperNodesList)
-}
-
-/**
- * Makes clusters of nodes to arrange papers.
- *
- * @param {object} cluster
- *
- *   Cluster from which papers in each subcluster are to be obtained.
+ *   Nodes whose links are to be made.
  *
  * @return {array}
  *
- *   Array of paper node clusters of individual subclusters.
+ *   Links between subcluster nodes.
  */
-function makePaperNodesList (cluster) {
-  return cluster.papers.map(makePaperNodes)
-}
-
-/**
- * Makes nodes to arrange papers.
- *
- * @param {array} papers
- *
- *   Papers in a subcluster.
- *
- * @return {array}
- *
- *   Nodes to arrange papers.
- */
-function makePaperNodes (papers) {
-  const radius = 0.01
-  const angleSpeed = (2.0 * Math.PI) / papers.prob.length
-  return papers.prob.map((prob, i) => {
-    const angle = i * angleSpeed
-    const distance = Math.pow(1.0 - prob, 2)
-    return {
-      prob: prob,
-      x: distance * Math.cos(angle),
-      y: distance * Math.sin(angle),
-      r: radius,
-      paper_id: papers.paper_id[i],
-      title: papers.title[i]
+function makeSubclusterNodeLinks (nodes) {
+  const distanceScale = config.subclusterDistanceScale
+  const links = []
+  for (let i = 0; i < nodes.length; ++i) {
+    const {
+      x: iX,
+      y: iY,
+      r: iR
+    } = nodes[i]
+    for (let j = i + 1; j < nodes.length; ++j) {
+      const {
+        x: jX,
+        y: jY,
+        r: jR
+      } = nodes[j]
+      const dX = jX - iX
+      const dY = jY - iY
+      const distance = Math.sqrt((dX * dX) + (dY * dY))
+      links.push({
+        source: i,
+        target: j,
+        distance: (distanceScale * distance) + iR + jR
+      })
     }
-  })
+  }
+  return links
 }
 
 /**
@@ -364,104 +481,184 @@ function arrangePapers (papers) {
 function initializePaperArrangingForce (papers) {
   const collide = forceCollide()
     .radius(d => d.r)
-    .iterations(15)
+    .iterations(30)
   const centerX = forceX(0)
-    .strength(0.05)
+    .strength(0.03)
   const centerY = forceY(0)
-    .strength(0.05)
+    .strength(0.03)
+  const center = forceBoundingBoxCenter()
   const force = forceSimulation(papers)
-    .alphaMin(0.001)
-    .alphaDecay(0.0399) // 200 updates
     .force('collide', collide)
     .force('centerX', centerX)
     .force('centerY', centerY)
+    .force('center', center)
   return force
 }
 
 /**
- * Merges cluster and paper distributions.
+ * Renders paper density contours in clusters.
  *
- * This function mutates the input object `clusterNodes`.
+ * This function mutates the input object `clusters`.
+ *
+ * @param {array} clusters
+ *
+ *   Clusters to render paper density contours.
  */
-function mergeClustersAndPaperDistributions (clusterNodes, paperClusterList) {
-  clusterNodes.forEach((clusterNode, i) => {
-    const paperNodesList = paperClusterList[i]
-    clusterNode.subclusters.forEach((subcluster, j) => {
-      subcluster.papers = paperNodesList[j]
-    })
+function renderPaperDensityContoursInClusters (clusters) {
+  clusters.forEach(cluster => {
+    return renderPaperDensityContoursInSubclusters(cluster.subclusters)
   })
-  return clusterNodes
 }
 
 /**
- * Renders paper probability contours.
+ * Renders paper density contours in subclusters.
  *
- * This function mutates the input object `clusterNodes`.
+ * This function mutates the input object `subclusters`.
  *
- * @param {array} clusterNodes
+ * @param {array} subclusters
  *
- *   Clusters to make paper probability contours.
+ *   Subclusters to render paper density contours.
  */
-function renderAllPaperProbabilityContours (clusterNodes) {
-  clusterNodes.forEach(renderPaperProbabilityContours)
+function renderPaperDensityContoursInSubclusters (subclusters) {
+  subclusters.forEach(subcluster => {
+    const contours = estimatePaperDensityContours(subcluster.papers)
+    subcluster.densityContours = contours
+  })
 }
 
 /**
- * Makes paper probability contours.
+ * Estimates paper density contours.
  *
- * This function mutates the input object `clusterNode`.
+ * @param {array} papers
  *
- * @param {object} clusterNode
+ *   Papers whose density contours are to be estimated.
  *
- *   Cluster to make paper probability contours.
+ * @return {object}
+ *
+ *   Has the following fields,
+ *   - `domain`: {array} domain of the projection from a paper coordinate to
+ *     a density estimator coordinate.
+ *   - `estimatorSize`: {number} length of one edge of a square used to
+ *     estimate density.
+ *   - `contours`: {array} estimated contours.
  */
-function renderPaperProbabilityContours (clusterNode) {
-  // initializes grids
-  const numGridRows = 80
-  const numGridColumns = 80
-  const innerPadding = 0.2
-  const grids = initializePaperProbabilityGrids(numGridRows, numGridColumns)
-  // puts papers into grids
-  clusterNode.subclusters.forEach(subcluster => {
-    const { papers } = subcluster
-    const innerR = subcluster.size * (1.0 - innerPadding)
-    const innerD = 2.0 * innerR
-    const minPaperX = d3Min(papers.map(p => p.x - p.r))
-    const maxPaperX = d3Max(papers.map(p => p.x + p.r))
-    const minPaperY = d3Min(papers.map(p => p.y - p.r))
-    const maxPaperY = d3Max(papers.map(p => p.y + p.r))
-    // subcluster coordinate --> [-0.5, 0.5] --> [0.0, 1.0]
-    const paperScaleX = scaleLinear()
-      .domain([minPaperX, maxPaperX])
-      .range([(subcluster.x - innerR) + 0.5, (subcluster.x + innerR) + 0.5])
-    const paperScaleY = scaleLinear()
-      .domain([minPaperY, maxPaperY])
-      .range([(subcluster.y - innerR) + 0.5, (subcluster.y + innerR) + 0.5])
-    papers.forEach(paper => {
-      const paperX = paperScaleX(paper.x)
-      const paperY = paperScaleY(paper.y)
-      // [0.0, 1.0] --> [0, numGridColumns] and [0, numGridRows]
-      const row = Math.floor(numGridRows * paperY)
-      const column = Math.floor(numGridColumns * paperX)
-      // TODO: take care of index range errors
-      const grid = grids[column + (row * numGridColumns)]
-      ++grid.numPapers
-      grid.totalProb += paper.prob
-    })
-  })
-  // creates contours
-  const contourGenerator = d3Contours()
-    .size([numGridColumns, numGridRows])
-  const thresholds = Array.from({ length: 8 }).map((_, i) => (i + 1) * 0.1)
-  const gridProbs = grids.map(grid => grid.prob())
-  const contours = thresholds.map(threshold => {
-    return contourGenerator.contour(gridProbs, threshold)
-  })
-  clusterNode.probabilityContours = {
-    innerPadding,
-    numGridRows,
-    numGridColumns,
+function estimatePaperDensityContours (papers) {
+  const halfDomainSize =
+    (0.5 * getBoundingSquareSize(papers)) + config.paperDensityMargin
+  const domain = [-halfDomainSize, halfDomainSize]
+  // for mapping from paper to density estimator coordinates,
+  // [-1, 1] --> [0, 600] worked well
+  const estimatorSize = Math.round(600 * halfDomainSize)
+  const project = scaleLinear()
+    .domain(domain)
+    .range([0, estimatorSize])
+  const densityEstimator = contourDensity()
+    .x(d => project(d.x))
+    .y(d => project(d.y))
+    .size([estimatorSize, estimatorSize])
+    .cellSize(8) // empirical
+    .bandwidth(30) // empirical
+    .thresholds(Math.max(2, Math.round(Math.sqrt(papers.length) * 0.5)))
+  const contours = densityEstimator(papers)
+  // calculates the mean prob of every contour
+  // updates the contents of contours
+  let papersOut = papers
+  for (let i = contours.length - 1; i >=0; --i) {
+    const contour = contours[i]
+    function isInGeoPolygons (paper) {
+      const x = project(paper.x)
+      const y = project(paper.y)
+      return contour.coordinates.some(geoPolygon => {
+        return geoPolygonContains(geoPolygon, [x, y])
+      })
+    }
+    let papersIn = papersOut.filter(isInGeoPolygons)
+    papersOut = papersOut.filter(p => papersIn.indexOf(p) === -1)
+    contour.numPapers = papersIn.length
+    if (papersIn.length > 0) {
+      contour.meanProb = d3Mean(papersIn, p => p.prob)
+    } else {
+      contour.meanProb = 0.0
+    }
+  }
+  return {
+    domain,
+    estimatorSize,
     contours
+  }
+}
+
+/**
+ * Renders island contours of given clusters.
+ *
+ * This function mutates the contents of `clusters`.
+ *
+ * @param {array} clusters
+ *
+ *   Clusters whose islands are to be rendered.
+ */
+function renderIslandContours (clusters) {
+  clusters.forEach(cluster => {
+    const contours = estimateIslandContours(cluster.subclusters)
+    cluster.islandContours = contours
+  })
+}
+
+/**
+ * Estimates island contours of given subclusters.
+ *
+ * @param {array} subclusters
+ *
+ *   Subclusters that form an island to be estimated.
+ *
+ * @return {object}
+ *
+ *   Has the following fields,
+ *   - `domain`: {`array`} domain of the projection from a cluster coordinate
+ *     to a density estimator coordinate.
+ *   - `estimatorSize`: {`number`} length of one edge of a square used by
+ *     a density estimator.
+ *   - `contours`: {array} estimated island contours.
+ */
+function estimateIslandContours (subclusters) {
+  const clusterR =
+    (0.5 * getBoundingSquareSize(subclusters)) + config.islandContourMargin
+  const domain = [-clusterR, clusterR]
+  const estimatorSize = Math.round((clusterR / 3.0) * 600) // 600 for clusterR=3.0 empirically works well
+  const estimatorProject = scaleLinear()
+    .domain(domain)
+    .range([0, estimatorSize])
+  const estimatorScale = scaleLinear()
+    .domain([0, clusterR])
+    .range([0, 0.5 * estimatorSize])
+  // projects all of the papers in all subclusters
+  const projectedPapers = Array.prototype.concat.apply(
+    [],
+    subclusters.map((subcluster, i) => {
+      const { papers } = subcluster
+      // projection is just a translation
+      const paperProjectX = x => estimatorProject(x + subcluster.x)
+      const paperProjectY = y => estimatorProject(y + subcluster.y)
+      return papers.map(paper => {
+        return {
+          x: paperProjectX(paper.x),
+          y: paperProjectY(paper.y)
+        }
+      })
+    })
+  )
+  // estimates density
+  const densityEstimator = contourDensity()
+    .size([estimatorSize, estimatorSize])
+    .x(d => d.x)
+    .y(d => d.y)
+    .bandwidth(36) // empirical value
+    .thresholds(25) // empirical value
+  const contours = densityEstimator(projectedPapers)
+  return {
+    domain,
+    estimatorSize,
+    contours: contours.slice(0, 2) // leaves outmost two contours
   }
 }
 
@@ -494,4 +691,106 @@ function initializePaperProbabilityGrids (numGridRows, numGridColumns) {
     }
   }
   return grids
+}
+
+/**
+ * Returns the bounding box of given nodes.
+ *
+ * @param {array} nodes
+ *
+ *   Array of nodes whose bounding box is to be obtained.
+ *
+ * @return {object}
+ *
+ *   Has the following fields,
+ *   - `minX`: minimum x-coordinate value of the bounding box.
+ *   - `maxX`: maximum x-coordinate value of the bounding box.
+ *   - `minY`: minimum y-coordinate value of the bounding box.
+ *   - `maxY`: maximum y-coordinate value of the bounding box.
+ */
+function getBoundingBox (nodes) {
+  return {
+    minX: d3Min(nodes.map(node => node.x - node.r)),
+    maxX: d3Max(nodes.map(node => node.x + node.r)),
+    minY: d3Min(nodes.map(node => node.y - node.r)),
+    maxY: d3Max(nodes.map(node => node.y + node.r))
+  }
+}
+
+/**
+ * Returns the size of the bonding square of given nodes.
+ *
+ * @param {array} nodes
+ *
+ *   Array of nodes whose bounding square size is to be obtained.
+ *
+ * @return {number}
+ *
+ *   Size, length of an edge, of the bounding square.
+ */
+function getBoundingSquareSize (nodes) {
+  const {
+    minX,
+    maxX,
+    minY,
+    maxY
+  } = getBoundingBox(nodes)
+  return Math.max(maxX - minX, maxY - minY)
+}
+
+/**
+ * Returns a `d3-force` force object that centers a bounding box.
+ *
+ * @return {function}
+ *
+ *   `d3-force` force object that centers a bounding box.
+ */
+function forceBoundingBoxCenter () {
+  let _nodes
+
+  function force () {
+    const {
+      minX,
+      maxX,
+      minY,
+      maxY
+    } = getBoundingBox(_nodes)
+    const cX = minX + (0.5 * (maxX - minX))
+    const cY = minY + (0.5 * (maxY - minY))
+    _nodes.forEach(node => {
+      node.x -= cX
+      node.y -= cY
+    })
+  }
+
+  force.initialize = function (nodes) {
+    _nodes = nodes
+  }
+
+  return force
+}
+
+/**
+ * Returns whether a given geo-polygon contains a specified point.
+ *
+ * @param {array} geoPolygon
+ *
+ *   Geo-polygon to test if it contains `xy`.
+ *   The first element is the outer contour.
+ *   Second and later elements are holes.
+ *
+ * @param {array} xy
+ *
+ *   Point to test if it is included in `geoPolygon`.
+ *
+ * @return {boolean}
+ */
+function geoPolygonContains (geoPolygon, xy) {
+  if (polygonContains(geoPolygon[0], xy)) {
+    return geoPolygon.slice(1).every(polygon => {
+      return !polygonContains(polygon, xy)
+    })
+  } else {
+    return false
+  }
 }
