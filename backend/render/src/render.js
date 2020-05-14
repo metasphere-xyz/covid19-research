@@ -29,17 +29,19 @@ import {
 // configurations
 const config = {
   // scale to be applied to cluster distances.
-  clusterDistanceScale: 50.0,
+  clusterDistanceScale: 60.0,
   // scale to be applied to subcluster distances.
-  subclusterDistanceScale: 5.0,
+  subclusterDistanceScale: 10.0,
   // padding inside a cluster.
-  clusterPadding: 1.0,
+  clusterPadding: 2.0,
   // padding inside a subcluster.
   subclusterPadding: 0.2,
-  // margin of a paper density estimator
+  // margin of a paper density estimator.
   paperDensityMargin: 0.1,
-  // margin of an island contour estimator
-  islandContourMargin: 0.5
+  // margin of an island contour estimator.
+  islandContourMargin: 0.5,
+  // maximum strength that draws papers toward the center.
+  maxPaperCenteringStrength: 0.075
 }
 
 /**
@@ -142,9 +144,12 @@ function makePaperNodes (papers) {
   const baseRadius = 0.05
   const numPapers = papers.prob.length
   const angleRate = (2.0 * Math.PI) / numPapers
+  // the less the mean prob, the sparser the distribution
+  const meanProb = d3Mean(papers.prob)
+  const minDistance = 1.0 - meanProb
   return papers.prob.map((prob, i) => {
     const angle = i * angleRate
-    const distance = Math.pow(1.0 - prob, 2)
+    const distance = minDistance + Math.pow(1.0 - prob, 2)
     return {
       prob: prob,
       x: distance * Math.cos(angle),
@@ -483,9 +488,9 @@ function initializePaperArrangingForce (papers) {
     .radius(d => d.r)
     .iterations(30)
   const centerX = forceX(0)
-    .strength(0.03)
+    .strength(d => d.prob * config.maxPaperCenteringStrength)
   const centerY = forceY(0)
-    .strength(0.03)
+    .strength(d => d.prob * config.maxPaperCenteringStrength)
   const center = forceBoundingBoxCenter()
   const force = forceSimulation(papers)
     .force('collide', collide)
@@ -652,7 +657,7 @@ function estimateIslandContours (subclusters) {
     .size([estimatorSize, estimatorSize])
     .x(d => d.x)
     .y(d => d.y)
-    .bandwidth(36) // empirical value
+    .bandwidth(45) // empirical value
     .thresholds(25) // empirical value
   const contours = densityEstimator(projectedPapers)
   return {
