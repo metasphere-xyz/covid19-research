@@ -1,6 +1,6 @@
 {
   "name": "metasphere-hackcorona",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "metasphere MPV for the HackCorona challenge",
   "main": "dist/main.js",
   "scripts": {
