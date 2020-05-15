@@ -74,7 +74,7 @@ export default {
       },
       // visible region
       screenView: {
-        scale: 600, // 1 (data) : 800 (screen)
+        scale: 600, // 1 (data) : 600 (screen)
         translateX: 0,
         translateY: 0
       },
@@ -235,7 +235,7 @@ export default {
               .join('circle')
                 .attr('class', function (d) {
                   let css = `paper-dot ${subclusterId}`
-                  // marks if the data is selected.
+                  // marks this element selected if the data is selected.
                   if (d === vm.selected.article) {
                     css += ' selected'
                     // remembers `this` element to cancel selection
