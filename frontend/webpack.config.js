@@ -62,10 +62,6 @@ module.exports = {
     }),
     new CopyPlugin([
       {
-        from: 'source-data.csv',
-        context: '../docs'
-      },
-      {
         from: 'cluster-data.json',
         context: '../docs'
       }

@@ -1,5 +1,5 @@
 <template>
-  <div class="example">
+  <div class="explorer">
     <div class="columns is-gapless">
       <div class="column is-two-thirds">
         <div
@@ -36,16 +36,14 @@
 <script>
 import * as d3 from 'd3'
 
-import arrays from '@utils/arrays'
-import { debounce } from 'lodash'
 import Paper from '@components/paper'
 
 /**
- * Example cluster and paper information.
+ * Cluster and paper explorer.
  *
  * @namespace Explorer
  *
- * @module components
+ * @memberof module:components
  */
 export default {
   name: 'Expolorer',
@@ -76,7 +74,7 @@ export default {
       },
       // visible region
       screenView: {
-        scale: 800, // 1 (data) : 800 (screen)
+        scale: 600, // 1 (data) : 600 (screen)
         translateX: 0,
         translateY: 0
       },
@@ -96,7 +94,6 @@ export default {
       return this.svg.height * 0.5
     },
     // x range of cluster-to-screen projection.
-    // fx: [-0.5, 0.5] --> screenViewXRange
     screenViewXRange () {
       const {
         scale,
@@ -109,7 +106,7 @@ export default {
       ]
     },
     // y range of cluser-to-screen projection.
-    // fy: [-0.5, 0.5] --> screenViewYRange
+    // upside down.
     screenViewYRange () {
       const {
         scale,
@@ -117,9 +114,26 @@ export default {
       } = this.screenView
       const halfScale = scale * 0.5
       return [
-        (this.svgCenterY + translateY) - halfScale,
-        (this.svgCenterY + translateY) + halfScale
+        (this.svgCenterY + translateY) + halfScale,
+        (this.svgCenterY + translateY) - halfScale
       ]
+    },
+    // domain of clusters.
+    clusterBoundingSquareSize () {
+      const minX = d3.min(this.clusters, c => c.x - c.r)
+      const maxX = d3.max(this.clusters, c => c.x + c.r)
+      const minY = d3.min(this.clusters, c => c.y - c.r)
+      const maxY = d3.max(this.clusters, c => c.y + c.r)
+      return Math.max(maxX - minX, maxY - minY)
+    },
+    // radius of a paper dot.
+    paperDotRadius () {
+      const { scale } = this.screenView
+      if (scale <= 24000.0) {
+        return 2.5
+      } else {
+        return 5.0
+      }
     }
   },
   created () {
@@ -153,131 +167,85 @@ export default {
       }
       const vm = this
       const svg = d3.select(this.$refs['svg'])
-      const baseProjectX = d3.scaleLinear()
-        .domain([-0.5, 0.5])
-        .range(this.screenViewXRange)
-      const baseProjectY = d3.scaleLinear()
-        .domain([0.5, -0.5]) // upside down
-        .range(this.screenViewYRange)
-      const baseScaleR = d3.scaleLinear()
-        .domain([0.0, 1.0])
-        .range([0.0, this.screenView.scale])
+      const projection = this.initializeProjection(clusters)
       // filters out invisible clusters
-      const visibleClusters = clusters.filter(cluster => {
-        const cX = baseProjectX(cluster.x)
-        const cY = baseProjectY(cluster.y)
-        const r = baseScaleR(cluster.size)
-        const minX = cX - r
-        const maxX = cX + r
-        const minY = cY - r
-        const maxY = cY + r
-        return (maxX > 0) &&
-          (minX < this.svg.width) &&
-          (maxY > 0) &&
-          (minY < this.svg.height)
-      })
+      const visibleClusters =
+        clusters.filter(this.isClusterVisible.bind(this, projection))
       // removes the contents
       // this improves the speed to update the screen
       svg.select('g.base-pane')
         .remove()
       const contents = svg.append('g')
         .attr('class', 'base-pane')
-      // renders clusters
-      contents.selectAll('circle.cluster')
-        .data(visibleClusters)
-        .join('circle')
-          .attr('class', 'cluster')
-          .attr('cx', d => baseProjectX(d.x))
-          .attr('cy', d => baseProjectY(d.y))
-          .attr('r', d => baseScaleR(d.size))
+      const universePane = contents.append('g')
+        .attr('class', 'universe-pane')
+      universePane.append('rect')
+        .attr('class', 'ocean')
+        .attr('x', 0)
+        .attr('y', 0)
+        .attr('width', this.svg.width)
+        .attr('height', this.svg.height)
+      const islandPane = contents.append('g')
+        .attr('class', 'island-pane')
+      const paperPane = contents.append('g')
+        .attr('class', 'paper-pane')
       // renders subclusters
       visibleClusters.forEach(cluster => {
         const clusterId = `cluster-${cluster.topicId}`
-        const clusterX = baseProjectX(cluster.x)
-        const clusterY = baseProjectY(cluster.y)
-        const clusterR = baseScaleR(cluster.size)
-        const clusterProjectX = d3.scaleLinear()
-          .domain([-0.5, 0.5])
-          .range([clusterX - clusterR, clusterX + clusterR])
-        const clusterProjectY = d3.scaleLinear()
-          .domain([0.5, -0.5]) // upside down
-          .range([clusterY - clusterR, clusterY + clusterR])
-        const clusterScaleR = d3.scaleLinear()
-          .domain([0.0, 0.5])
-          .range([0.0, clusterR])
-        // filters out invisible subclusters
-        const visibleSubclusters = cluster.subclusters.filter(subcluster => {
-          const cX = clusterProjectX(subcluster.x)
-          const cY = clusterProjectY(subcluster.y)
-          const r = clusterScaleR(subcluster.size)
-          const minX = cX - r
-          const maxX = cX + r
-          const minY = cY - r
-          const maxY = cY + r
-          return (maxX > 0) &&
-            (minX < this.svg.width) &&
-            (maxY > 0) &&
-            (minY < this.svg.height)
-        })
-        contents.selectAll(`circle.cluster.subcluster.${clusterId}`)
-          .data(visibleSubclusters)
-          .join('circle')
-            .attr('class', `cluster subcluster ${clusterId}`)
-            .attr('cx', d => clusterProjectX(d.x))
-            .attr('cy', d => clusterProjectY(d.y))
-            .attr('r', d => clusterScaleR(d.size))
-        // renders probability contours
-        const {
-          innerPadding, // necessary to distribute papers inside subclusters
-          numGridRows,
-          numGridColumns,
-          contours
-        } = cluster.probabilityContours
-        const geoProjectX = d3.scaleLinear()
-          .domain([0, numGridColumns])
-          .range([clusterX - clusterR, clusterX + clusterR])
-        const geoProjectY = d3.scaleLinear()
-          .domain([numGridRows, 0]) // upside down
-          .range([clusterY - clusterR, clusterY + clusterR])
-        const geoPath = d3.geoPath()
-          .projection(d3.geoTransform({
-            point: function (x, y) {
-              this.stream.point(geoProjectX(x), geoProjectY(y))
-            }
-          }))
-        contents.selectAll(`path.probability-contour.${clusterId}`)
-          .data(contours)
+        const clusterProjection = projection.translate(cluster.x, cluster.y)
+        const visibleSubclusters = cluster.subclusters.filter(
+          this.isClusterVisible.bind(this, clusterProjection))
+        // renders the island contour
+        const islandPathProjection = this.makeContourPathProjection(
+          clusterProjection,
+          cluster.islandContours)
+        islandPane.selectAll(`path.island-contour.${clusterId}`)
+          .data(cluster.islandContours.contours.slice(0, 1)) // outmost contour
           .join('path')
-            .attr('class', `probability-contour ${clusterId}`)
-            .attr('d', d => geoPath(d))
-            .attr('fill', d => d3.interpolateTurbo(d.value))
-        // renders individual papers if zoomed enough
-        if (this.screenView.scale >= 6000) {
+            .attr('class', `island-contour ${clusterId}`)
+            .attr('d', islandPathProjection)
+        // reduces rendering efforts depending on the scale
+        // TODO: mipmap approach may be needed
+        //       because contours are still too fine when zoomed out.
+        if (this.screenView.scale < 6000) {
           visibleSubclusters.forEach(subcluster => {
             const subclusterId =
               `subcluster-${cluster.topicId}-${subcluster.topicId}`
-            const { papers } = subcluster
-            const subclusterX = clusterProjectX(subcluster.x)
-            const subclusterY = clusterProjectY(subcluster.y)
-            const subclusterR = clusterScaleR(subcluster.size)
-            const innerR = subclusterR * (1.0 - innerPadding)
-            const paperMinX = d3.min(papers.map(p => p.x - p.r))
-            const paperMaxX = d3.max(papers.map(p => p.x + p.r))
-            const paperMinY = d3.min(papers.map(p => p.y - p.r))
-            const paperMaxY = d3.max(papers.map(p => p.y + p.r))
-            const paperProjectX = d3.scaleLinear()
-              .domain([paperMinX, paperMaxX])
-              .range([subclusterX - innerR, subclusterX + innerR])
-            const paperProjectY = d3.scaleLinear()
-              .domain([paperMaxY, paperMinY]) // upside down
-              .range([subclusterY - innerR, subclusterY + innerR])
-            contents.selectAll(`circle.paper-dot.${subclusterId}`)
-              .data(papers)
+            const subclusterProjection =
+              clusterProjection.translate(subcluster.x, subcluster.y)
+            const densityPathProjection = this.makeContourPathProjection(
+              subclusterProjection,
+              subcluster.densityContours)
+            paperPane.selectAll(`path.density-contour.${subclusterId}`)
+              .data(subcluster.densityContours.contours)
+              .join('path')
+                .attr('class', `density-contour ${subclusterId}`)
+                .attr('d', densityPathProjection)
+                .attr('fill', d => d3.interpolateGreys(d.meanProb))
+          })
+        } else {
+          // renders individual papers if zoomed enough
+          visibleSubclusters.forEach(subcluster => {
+            const subclusterId =
+              `subcluster-${cluster.topicId}-${subcluster.topicId}`
+            const subclusterProjection =
+              clusterProjection.translate(subcluster.x, subcluster.y)
+            paperPane.selectAll(`circle.paper-dot.${subclusterId}`)
+              .data(subcluster.papers)
               .join('circle')
-                .attr('class', `paper-dot ${subclusterId}`)
-                .attr('cx', d => paperProjectX(d.x))
-                .attr('cy', d => paperProjectY(d.y))
-                .attr('r', 2.5)
+                .attr('class', function (d) {
+                  let css = `paper-dot ${subclusterId}`
+                  // marks this element selected if the data is selected.
+                  if (d === vm.selected.article) {
+                    css += ' selected'
+                    // remembers `this` element to cancel selection
+                    vm.selected.node = this
+                  }
+                  return css
+                })
+                .attr('cx', d => subclusterProjection.projectX(d.x))
+                .attr('cy', d => subclusterProjection.projectY(d.y))
+                .attr('r', this.paperDotRadius)
                 .on('pointerover', function (d) {
                   if (process.env.NODE_ENV !== 'production') {
                     console.log(`pointerover: ${d.paper_id}`)
@@ -425,6 +393,76 @@ export default {
       if (process.env.NODE_ENV !== 'production') {
         console.log('updated scale', this.screenView.scale)
       }
+    },
+    // returns a projection from data --> screen.
+    // scale is consistent among clusters, subcluster and papers.
+    initializeProjection () {
+      const halfClusterSize = 0.5 * this.clusterBoundingSquareSize
+      const _projectX = d3.scaleLinear()
+        .domain([-halfClusterSize, halfClusterSize])
+        .range(this.screenViewXRange)
+      const _projectY = d3.scaleLinear()
+        .domain([-halfClusterSize, halfClusterSize])
+        .range(this.screenViewYRange)
+      const _scale = d3.scaleLinear()
+        .domain([0.0, halfClusterSize])
+        .range([0.0, 0.5 * this.screenView.scale])
+
+      class Projection {
+        constructor (offsetX, offsetY) {
+          this.offsetX = offsetX
+          this.offsetY = offsetY
+        }
+
+        projectX (x) {
+          return _projectX(x + this.offsetX)
+        }
+
+        projectY (y) {
+          return _projectY(y + this.offsetY)
+        }
+
+        scale (x) {
+          return _scale(x)
+        }
+
+        translate (dX, dY) {
+          return new Projection(this.offsetX + dX, this.offsetY + dY)
+        }
+      }
+
+      return new Projection(0, 0)
+    },
+    isClusterVisible (projection, cluster) {
+      const cX = projection.projectX(cluster.x)
+      const cY = projection.projectY(cluster.y)
+      const r = projection.scale(cluster.r)
+      const minX = cX - r
+      const maxX = cX + r
+      const minY = cY - r
+      const maxY = cY + r
+      return (maxX > 0) &&
+        (minX < this.svg.width) &&
+        (maxY > 0) &&
+        (minY < this.svg.height)
+    },
+    makeContourPathProjection (projection, { domain, estimatorSize }) {
+      const minX = projection.projectX(domain[0])
+      const maxX = projection.projectX(domain[1])
+      const minY = projection.projectY(domain[0])
+      const maxY = projection.projectY(domain[1])
+      const geoProjectX = d3.scaleLinear()
+        .domain([0, estimatorSize])
+        .range([minX, maxX])
+      const geoProjectY = d3.scaleLinear()
+        .domain([0, estimatorSize])
+        .range([minY, maxY])
+      return d3.geoPath()
+        .projection(d3.geoTransform({
+          point (x, y) {
+            this.stream.point(geoProjectX(x), geoProjectY(y))
+          }
+        }))
     }
   }
 }
@@ -436,7 +474,7 @@ export default {
 /* true navbar height */
 $true-navbar-height: $navbar-height + ($navbar-padding-vertical / 2);
 
-.example {
+.explorer {
   position: relative;
   width: 100%;
   height: calc(100vh - #{$true-navbar-height});
@@ -461,11 +499,18 @@ $true-navbar-height: $navbar-height + ($navbar-padding-vertical / 2);
   }
 }
 
+rect {
+  &.ocean {
+    stroke: none;
+    fill: lightgrey;
+  }
+}
+
 circle {
   &.paper-dot {
     stroke: none;
     fill: black;
-    fill-opacity: 1.0;
+    fill-opacity: 0.5;
 
     &.highlighted {
       stroke: yellow;
@@ -491,9 +536,14 @@ circle {
 }
 
 path {
-  &.probability-contour {
+  &.island-contour {
     stroke: black;
     stroke-width: 0.5;
+    fill: white;
+  }
+
+  &.density-contour {
+    stroke: none;
   }
 }
 </style>
