@@ -1,7 +1,7 @@
 # Render
 
 This is a folder for a command-line tool that renders landforms without a browser.
-The command creates landforms and outputs a JSON file that contains calculated coordinates of clusters, subclusters, papers and probability contours.
+The command creates landforms and outputs a JSON file that contains calculated coordinates of clusters, subclusters, papers and contours.
 By using the output JSON file, the frontend application can skip arrangement of landforms.
 That will improve the speed of the frontend application.
 
@@ -28,7 +28,7 @@ Please take the following steps,
     npm run build
     ```
 
-4. You will find a `index.js` script in a `dist` folder.
+4. You will find an `index.js` script in a `dist` folder.
 
 ## Running the command
 
@@ -76,51 +76,87 @@ The structure of an output JSON file is shown below as an equivalent JavaScript 
     // array of clusters
     {
         topicId: 1, // topic ID of this cluster
-        x: 0.14397892855168884, // center of this cluster in a domain [-0.5, 0.5]
-        y: 0.18935082774405496, // center of this cluster in a domain [-0.5, 0.5]
-        size: 0.0758342654069177, // radius of this cluster
+        x: 19.692993421111307, // x-coordinate value of the center of this cluster
+        y: 16.08015679477537, // y-coordinate value of the center of this cluster
+        r: 6.236347072521504, // radius of this cluster
         numPapers: 2477, // number of papers in this cluster
         // array of subclusters in this cluster
         subclusters: [
             {
                 topicId: 1, // topic ID of this subcluster
-                x: -0.11967420440637258, // center of this subcluster in a domain [-0.5, 0.5]
-                y: -0.19517664148886832, // center of this subcluster in a domain [-0.5, 0.5]
-                size: 0.08390331248396089, // radius of this subcluster
+                x: -2.7900204540373372, // x-coordinate value of the center of this subcluster
+                y: -1.8995761634426584, // y-coordinate value of the center of this subcluster
+                r: 1.013511886512032, // radius of this subcluster
                 numPapers: 279, // number of papers in this subcluster
                 // array of papers in this subcluster
                 papers: [
                     {
-                        prob: 0.2819, // probability of this paper contained in the subcluster (?)
-                        x: 0.12701737873157576, // center of this paper
-                        y: 0.00988538632014025, // center of this paper
-                        r: 0.01, // radius of this paper
+                        prob: 0.2819, // probability of this paper
+                        x: 0.2779157663295161, // x-coordinate value of the center of this paper
+                        y: 0.012964712106013672, // y-coordinate value of the center of this paper
+                        r: 0.025783380499999998, // radius of this paper
                         paper_id: "0015023cc06b5362d332b3baf348d11567ca2fbb", // SHA256 hash of this paper
                         title: "The RNA pseudoknots in foot-and-mouth disease virus are dispensable for genome replication but essential for the production of infectious virus. 2 3" // title of this paper
                     }, // ...
-                ]
+                ],
+                densityContours: {
+                    // domain of the density estimator. domain --> [0, estimatorSize]
+                    domain: [
+                        -0.913511886512032,
+                        0.913511886512032
+                    ],
+                    // size of the density estimator.
+                    // d3.contourDensity().size([estimatorSize, estimatorSize]).
+                    estimatorSize: 548,
+                    // array of density contours.
+                    // created by d3.contourDensity.
+                    contours: [
+                        // can be supplied to d3.geoPath
+                        {
+                            type: "MultiPolygon",
+                            value: 0.00078125,
+                            coordinates: [
+                                [
+                                    [
+                                        [
+                                            243.99164199927486,
+                                            442
+                                        ], // ...
+                                    ], // ...
+                                ], // ...
+                            ],
+                            numPapers: 46, // number of papers inside this contour not included in inner contours.
+                            meanProb: 0.2442804347826087 // mean prob of papers inside this contour not included in inner contours.
+                        }, // ...
+                    ]
+                }
             }, // ...
         ],
-        // probability contours
-        probabilityContours: {
-            innerPadding: 0.2, // padding used to distribute papers inside the subcluster
-            numGridRows: 80, // number of grid rows used to calculate probability contours
-            numGridColumns: 80, // number of grid columns used to calculate probability contours
-            // array of probability contours
+        // island contours
+        islandContours: {
+            // domain of the density estimator. domain --> [0, estimatorSize]
+            domain: [
+                -4.736347072521504,
+                4.736347072521504
+            ],
+            // size of the density estimator.
+            // d3.contourDensity().size([estimatorSize, estimatorSize]).
+            estimatorSize: 947,
+            // array of island contours.
+            // created by d3.contourDensity.
             contours: [
-                // an object created by d3.contours#contour
-                // it can be supplied to d3.geoPath
+                // can be supplied to d3.geoPath
                 {
                     type: "MultiPolygon",
-                    value: 0.1, // probability corresponding to this contour
+                    value: 0.000625,
                     coordinates: [
                         [
                             [
                                 [
-                                    31.918604651162788,
-                                    29.5
+                                    494.25497976899874,
+                                    923
                                 ], // ...
-                            ]
+                            ], // ...
                         ], // ...
                     ]
                 }, // ...
