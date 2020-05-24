@@ -5,10 +5,12 @@
  */
 
 import {
+  cumsum as d3Cumsum,
   max as d3Max,
   mean as d3Mean,
   median as d3Median,
-  min as d3Min
+  min as d3Min,
+  sum as d3Sum
 } from 'd3-array'
 import {
   contourDensity
@@ -76,7 +78,20 @@ const config = {
     thresholds: 10,
     // number of contours to be outputted.
     numContours: 3
-  }
+  },
+  // noise function for island contours
+  islandContourNoiseFunction: composeNoiseFunction([
+    {
+      offset: 0,
+      amplitude: 40.0,
+      frequency: 0.01
+    },
+    {
+      offset: 0,
+      amplitude: 10.0,
+      frequency: 0.025
+    }
+  ])
 }
 
 /**
@@ -109,6 +124,8 @@ export async function render (data) {
       // renders density and island contours
       renderPaperDensityContoursInClusters(clusterNodes)
       renderIslandContours(clusterNodes)
+      // adds noise to island contours
+      makeIslandContoursNoisy(clusterNodes)
       return clusterNodes
     })
 }
@@ -938,3 +955,312 @@ function geoPolygonContains (geoPolygon, xy) {
     return false
   }
 }
+
+/**
+ * Makes island contours noisy.
+ *
+ * This function mutates the contents of `clusters`.
+ *
+ * @param {array} clusters
+ *
+ *   Clusters whose island contours are to be noisy.
+ */
+function makeIslandContoursNoisy (clusters) {
+  clusters.forEach(cluster => {
+    // saves the original contours as rawIslandContours
+    cluster.rawIslandContours = cluster.islandContours
+    cluster.islandContours = createNoisyContours(cluster.islandContours)
+  })
+}
+
+/**
+ * Creates noise contours from given contours.
+ *
+ * @param {object} contours
+ *
+ *   Has the following fields,
+ *   - `contours`
+ *   - `domain`
+ *   - `estimatorSize`
+ *
+ * @return {object}
+ *
+ *   A new object containing noisy contours.
+ *   Has the following fields,
+ *   - `contours`
+ *   - `domain`: same as the input
+ *   - `estimatorSize`: same as the input
+ */
+function createNoisyContours ({ contours, domain, estimatorSize }) {
+  const newContours = contours.map(
+    addNoiseToPaths.bind(null, config.islandContourNoiseFunction))
+  return {
+    contours: newContours,
+    domain,
+    estimatorSize
+  }
+}
+
+/**
+ * Adds noise to given paths.
+ *
+ * @param {function} noiseFunction
+ *
+ *   Function that takes a scalar value and returns a noise value.
+ *
+ * @param {object} polygons
+ *
+ *   Has at least the following field,
+ *   - `coordinates`
+ *
+ * @return {object}
+ *
+ *   Has the following fields,
+ *   - All fields of `polygons` except for `coordinates`.
+ *   - `coordinates`: noisy polygons.
+ */
+function addNoiseToPaths (noiseFunction, polygons) {
+  const newCoordinates = polygons.coordinates.map(ring => {
+    return ring.map(addNoiseToPolygon.bind(null, noiseFunction))
+  })
+  return {
+    ...polygons,
+    coordinates: newCoordinates
+  }
+}
+
+/**
+ * Adds noise to a given polygon.
+ *
+ * @param {function} noiseFunction
+ *
+ *   Function that takes a scalar value and returns a noise value.
+ *
+ * @param {array} polygon
+ *
+ *   Polygon to add noise.
+ *
+ * @return {array}
+ *
+ *   Noisy polygon.
+ */
+function addNoiseToPolygon (noiseFunction, polygon) {
+  const cumulativeDistances = d3Cumsum(calculateDistances(polygon))
+  const normalVectors = new Array(cumulativeDistances.length - 1)
+  for (let i = 0; i < normalVectors.length; ++i) {
+    normalVectors[i] = calculateNormalVector(
+      polygon[i],
+      polygon[i + 1],
+      polygon[i + 2])
+  }
+  // reduces abrupt changes of normal vector directions
+  correctNormalVectors(normalVectors)
+  const noiseSeries = cumulativeDistances.map(noiseFunction)
+  // moves each point by noise along its normal vector
+  const newPolygon = new Array(polygon.length)
+  // the first and last points do not move
+  newPolygon[0] = polygon[0]
+  newPolygon[polygon.length - 1] = polygon[polygon.length - 1]
+  for (let i = 0; i < normalVectors.length; ++i) {
+    const point = polygon[i + 1]
+    const normalVector = normalVectors[i]
+    const noise = noiseSeries[i]
+    newPolygon[i + 1] = [
+      point[0] + (noise * normalVector[0]),
+      point[1] + (noise * normalVector[1])
+    ]
+  }
+  return newPolygon
+}
+
+/**
+ * Calculates distances of given points.
+ *
+ * @param {array} points
+ *
+ *   Points to calculate distances.
+ *
+ * @return {array}
+ *
+ *   Distances.
+ */
+function calculateDistances (points) {
+  const distances = new Array(points.length - 1)
+  for (let i = 0; i < (points.length - 1); ++i) {
+    const [x1, y1] = points[i]
+    const [x2, y2] = points[i + 1]
+    const dX = x2 - x1
+    const dY = y2 - y1
+    distances[i] = Math.sqrt((dX * dX) + (dY * dY))
+  }
+  return distances
+}
+
+/**
+ * Calculates a normal vector at a middle point.
+ *
+ * @param {array} p1
+ *
+ * @param {array} p2
+ *
+ * @param {array} p3
+ *
+ * @return {array}
+ *
+ *   Normal vector at `p2`.
+ */
+function calculateNormalVector (p1, p2, p3) {
+  const u = makeUnitVector([
+    p2[0] - p1[0],
+    p2[1] - p1[1]
+  ])
+  const v = makeUnitVector([
+    p3[0] - p2[0],
+    p3[1] - p2[1]
+  ])
+  const w = makeUnitVector([
+    u[0] - v[0],
+    u[1] - v[1]
+  ])
+  return w
+}
+
+/**
+ * Returns a unit vector of a given vector.
+ *
+ * @param {array} v
+ *
+ *   Vector to make a unit vector.
+ *
+ * @return {array}
+ *
+ *   Unit vector of `v`.
+ */
+function makeUnitVector (v) {
+  const length = Math.sqrt((v[0] * v[0]) + (v[1] * v[1]))
+  const scale = (length !== 0.0) ? (1.0 / length) : 0.0
+  return [
+    scale * v[0],
+    scale * v[1]
+  ]
+}
+
+/**
+ * Corrects normal vectors.
+ *
+ * This function mutates the contents of `normalVectors`.
+ *
+ * @param {array} normalVectors
+ *
+ *   Normal vectors to correct.
+ */
+function correctNormalVectors (normalVectors) {
+  for (let i = 0; i < (normalVectors.length - 1); ++i) {
+    const v1 = normalVectors[i]
+    const v2 = normalVectors[i + 1]
+    const cos = dotProduct(v1, v2)
+    // flips the direction if the angle made by v1 and v2 is not between
+    // -90 and 90 degree; i.e., cosine of the angle is negative.
+    if (cos < 0) {
+      v2[0] = -v2[0]
+      v2[1] = -v2[1]
+    }
+  }
+}
+
+/**
+ * Calculates a dot product of given two vectors.
+ *
+ * @param {array} v1
+ *
+ *   Vector 1.
+ *
+ * @param {array} v2
+ *
+ *   Vector 2.
+ *
+ * @return {number}
+ *
+ *   Dot product of `v1` and `v2`.
+ */
+function dotProduct (v1, v2) {
+  return (v1[0] * v2[0]) + (v1[1] * v2[1])
+}
+
+/**
+ * Composes a noise function of given settings.
+ *
+ * @param {array} options
+ *
+ *   Options for Perlin Noise function.
+ *   Each element is an object with the following fields,
+ *   - `offset`
+ *   - `amplitude`
+ *   - `frequency`
+ *
+ * @return {function}
+ *
+ *   Composed noise function.
+ */
+function composeNoiseFunction (options) {
+  return function (x) {
+    return d3Sum(options.map(option => {
+      const {
+        offset,
+        amplitude,
+        frequency
+      } = option
+      return amplitude * perlin1d(offset + (x * frequency))
+    }))
+  }
+}
+
+/**
+ * Calculates a 1-D Perlin Noise value.
+ *
+ * @param {number} x
+ *
+ * @return {number}
+ *
+ *   Noise value at `x` between -1.0 and 1.0.
+ */
+function perlin1d (x) {
+  const xi = Math.floor(x) & 0xFF
+  const xf = x - Math.floor(x)
+  const u = fade(xf)
+  const x1 = lerp(
+    grad(permutation[xi], xf),
+    grad(permutation[xi + 1], xf - 1.0),
+    u
+  )
+  return x1
+}
+
+function fade (t) {
+  return t * t * t * ((t * ((t * 6) - 15)) + 10)
+}
+
+function lerp (a, b, x) {
+  return a + (x * (b - a))
+}
+
+function grad (hash, x) {
+  return ((hash & 0x1) === 0) ? x : -x
+}
+
+/** Pseudo random sequence for Perlin Noise. */
+const permutation = [
+  151,160,137,91,90,15,
+  131,13,201,95,96,53,194,233,7,225,140,36,103,30,69,142,8,99,37,240,21,10,23,
+  190, 6,148,247,120,234,75,0,26,197,62,94,252,219,203,117,35,11,32,57,177,33,
+  88,237,149,56,87,174,20,125,136,171,168, 68,175,74,165,71,134,139,48,27,166,
+  77,146,158,231,83,111,229,122,60,211,133,230,220,105,92,41,55,46,245,40,244,
+  102,143,54, 65,25,63,161, 1,216,80,73,209,76,132,187,208, 89,18,169,200,196,
+  135,130,116,188,159,86,164,100,109,198,173,186, 3,64,52,217,226,250,124,123,
+  5,202,38,147,118,126,255,82,85,212,207,206,59,227,47,16,58,17,182,189,28,42,
+  223,183,170,213,119,248,152, 2,44,154,163, 70,221,153,101,155,167, 43,172,9,
+  129,22,39,253, 19,98,108,110,79,113,224,232,178,185, 112,104,218,246,97,228,
+  251,34,242,193,238,210,144,12,191,179,162,241, 81,51,145,235,249,14,239,107,
+  49,192,214, 31,181,199,106,157,184, 84,204,176,115,121,50,45,127, 4,150,254,
+  138,236,205,93,222,114,67,29,24,72,243,141,128,195,78,66,215,61,156,180
+]
