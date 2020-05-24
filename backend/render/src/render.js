@@ -7,6 +7,7 @@
 import {
   max as d3Max,
   mean as d3Mean,
+  median as d3Median,
   min as d3Min
 } from 'd3-array'
 import {
@@ -28,20 +29,54 @@ import {
 
 // configurations
 const config = {
-  // scale to be applied to cluster distances.
-  clusterDistanceScale: 60.0,
-  // scale to be applied to subcluster distances.
-  subclusterDistanceScale: 10.0,
-  // padding inside a cluster.
-  clusterPadding: 2.0,
-  // padding inside a subcluster.
-  subclusterPadding: 0.2,
+  // configuration for cluster arrangement.
+  clusterArrangement: {
+    // factor to be multiplied to LDA coordinates.
+    coordinateScale: 150.0,
+    // padding inside a cluster.
+    padding: 4.0,
+    // whether clusters are to be attracted toward the center.
+    gravity: false,
+    // whether clusters try to stick to the initial positions.
+    anchorPosition: true,
+    // whether distance between clusters is kept.
+    keepDistance: false,
+    // factor multiplied to distance between clusters.
+    // ignored unless keepDistance is true.
+    distanceScale: 1.0
+  },
+  // configuration for subcluster arrangement.
+  subclusterArrangement: {
+    // factor to be multiplied to LDA coordinates.
+    coordinateScale: 3.5,
+    // function that calculates a padding inside a subcluster.
+    getPadding: calculateConfidencePadding.bind(null, 0.3),
+    // getPadding: getFixedPadding.bind(null, 0.2),
+    // whether subclusters are to be attracted toward the center of the cluster.
+    gravity: true,
+    // whether subclusters try to stick to the initial positions.
+    anchorPosition: false,
+    // whether distance between subclusters is kept.
+    keepDistance: true,
+    // factor multiplied to distance between subclusters.
+    // ignored unless keepDistance is true.
+    distanceScale: 6.0
+  },
   // margin of a paper density estimator.
   paperDensityMargin: 0.1,
-  // margin of an island contour estimator.
-  islandContourMargin: 0.5,
   // maximum strength that draws papers toward the center.
-  maxPaperCenteringStrength: 0.075
+  maxPaperCenteringStrength: 0.075,
+  // configuration for island contour estimation.
+  islandContourEstimator: {
+    // margin of an island contour estimator.
+    margin: 0.5,
+    // bandwidth of a density contour estimator.
+    bandwidth: 90,
+    // thresholds of a density contour estimator.
+    thresholds: 10,
+    // number of contours to be outputted.
+    numContours: 3
+  }
 }
 
 /**
@@ -177,17 +212,74 @@ function makePaperNodes (papers) {
  *   `d3-force` nodes to arrange subclusters.
  */
 function makeSubclusterNodes (cluster, paperNodesList) {
+  const {
+    coordinateScale,
+    getPadding
+  } = config.subclusterArrangement
   return paperNodesList.map((paperNodes, i) => {
     const innerR = 0.5 * getBoundingSquareSize(paperNodes)
+    const padding = getPadding(paperNodes)
+    const x0 = coordinateScale * cluster.x[i]
+    const y0 = coordinateScale * cluster.y[i]
     return {
       topicId: cluster.topic[i],
-      x: cluster.x[i],
-      y: cluster.y[i],
-      r: innerR + config.subclusterPadding,
+      x0,
+      y0,
+      x: x0,
+      y: y0,
+      r: innerR + padding,
       numPapers: paperNodes.length,
       papers: paperNodes
     }
   })
+}
+
+/**
+ * Returns a fixed padding for a subcluster containing given papers.
+ *
+ * By binding the first argument, you can make a padding function.
+ *
+ * @param {number} padding
+ *
+ *   Fixed padding in a subcluster.
+ *
+ * @param {array} papers
+ *
+ *   Ignored.
+ *
+ * @return {number}
+ *
+ *   `padding`.
+ */
+function getFixedPadding (padding, papers) {
+  return padding
+}
+
+/**
+ * Returns a padding for a subcluster containing given papers.
+ *
+ * Padding is proportional to the confidence of the subcluster.
+ * Confidence of a subcluster is defined as `1.0 - median(papers.prob)`
+ * where `median(papers.prob)` is the median of `prob`s of papers in
+ * the subcluster.
+ *
+ * By binding the first argument, you can make a padding function.
+ *
+ * @param {number} scale
+ *
+ *   Factor to be multiplied to the confidence.
+ *
+ * @param {array} papers
+ *
+ *   Papers in a subcluster.
+ *
+ * @return {number}
+ *
+ *   `scale * (1.0 - median(papers.prob))`.
+ */
+function calculateConfidencePadding (scale, papers) {
+  const medianProb = d3Median(papers, p => p.prob)
+  return scale * (1.0 - medianProb)
 }
 
 /**
@@ -208,13 +300,21 @@ function makeSubclusterNodes (cluster, paperNodesList) {
  *   `d3-force` nodes to arrange clusters.
  */
 function makeClusterNodes (data, subclusterNodesList) {
+  const {
+    coordinateScale,
+    padding
+  } = config.clusterArrangement
   return subclusterNodesList.map((subclusterNodes, i) => {
     const innerR = 0.5 * getBoundingSquareSize(subclusterNodes)
+    const x0 = coordinateScale * data.x[i]
+    const y0 = coordinateScale * data.y[i]
     return {
       topicId: data.topic[i],
-      x: data.x[i],
-      y: data.y[i],
-      r: innerR + config.clusterPadding,
+      x0,
+      y0,
+      x: x0,
+      y: y0,
+      r: innerR + padding,
       numPapers: data.papers[i].num_papers,
       subclusters: subclusterNodes
     }
@@ -300,21 +400,34 @@ function arrangeSubclusters (nodes) {
  *   `d3-force.forceSimulation` object that arranges cluster nodes.
  */
 function initializeClusterArrangingForce (nodes) {
+  const force = forceSimulation(nodes)
   const collide = forceCollide()
     .radius(d => d.r)
-    .iterations(10)
-  const centerX = forceX()
-  const centerY = forceY()
+  force.force('collide', collide)
+  if (config.clusterArrangement.gravity) {
+    const centerX = forceX(0)
+    const centerY = forceY(0)
+    force
+      .force('centerX', centerX)
+      .force('centerY', centerY)
+  }
+  if (config.clusterArrangement.anchorPosition) {
+    const anchorX = forceX()
+      .x(n => n.x0)
+    const anchorY = forceY()
+      .y(n => n.y0)
+    force
+      .force('anchorX', anchorX)
+      .force('anchorY', anchorY)
+  }
+  if (config.clusterArrangement.keepDistance) {
+    const link = forceLink(makeClusterNodeLinks(nodes))
+      .distance(l => l.distance)
+    force.force('link', link)
+  }
   const center = forceBoundingBoxCenter()
-  const link = forceLink(makeClusterNodeLinks(nodes))
-    .distance(link => link.distance)
-    .strength(() => 0.5)
-  return forceSimulation(nodes)
-    .force('collide', collide)
-    .force('centerX', centerX)
-    .force('centerY', centerY)
-    .force('center', center)
-    .force('link', link)
+  force.force('center', center)
+  return force
 }
 
 /**
@@ -329,21 +442,38 @@ function initializeClusterArrangingForce (nodes) {
  *   `d3-force.forceSimulation` object that arranges subcluster nodes.
  */
 function initializeSubclusterArrangingForce (nodes) {
+  const force = forceSimulation(nodes)
   const collide = forceCollide()
     .radius(d => d.r)
-    .iterations(10)
-  const centerX = forceX()
-  const centerY = forceY()
+  force.force('collide', collide)
+  // gravity
+  if (config.subclusterArrangement.gravity) {
+    const gravityX = forceX(0)
+    const gravityY = forceY(0)
+    force
+      .force('gravityX', gravityX)
+      .force('gravityY', gravityY)
+  }
+  // anchor
+  if (config.subclusterArrangement.anchorPosition) {
+    const anchorX = forceX()
+      .x(n => n.x0)
+    const anchorY = forceY()
+      .y(n => n.y0)
+    force
+      .force('anchorX', anchorX)
+      .force('anchorY', anchorY)
+  }
+  // distance
+  if (config.subclusterArrangement.keepDistance) {
+    const link = forceLink(makeSubclusterNodeLinks(nodes))
+      .distance(l => l.distance)
+    force.force('link', link)
+  }
+  // centers the bounding box
   const center = forceBoundingBoxCenter()
-  const link = forceLink(makeSubclusterNodeLinks(nodes))
-    .distance(link => link.distance)
-    .strength(0.5)
-  return forceSimulation(nodes)
-    .force('collide', collide)
-    .force('centerX', centerX)
-    .force('centerY', centerY)
-    .force('center', center)
-    .force('link', link)
+  force.force('center', center)
+  return force
 }
 
 /**
@@ -358,7 +488,7 @@ function initializeSubclusterArrangingForce (nodes) {
  *   Links between cluster nodes.
  */
 function makeClusterNodeLinks (nodes) {
-  const distanceScale = config.clusterDistanceScale
+  const { distanceScale } = config.clusterArrangement
   const links = []
   for (let i = 0; i < nodes.length; ++i) {
     const {
@@ -374,11 +504,12 @@ function makeClusterNodeLinks (nodes) {
       } = nodes[j]
       const dX = jX - iX
       const dY = jY - iY
-      const distance = Math.sqrt((dX * dX) + (dY * dY))
+      const ldaDistance = Math.sqrt((dX * dX) + (dY * dY))
+      const distance = iR + jR + (distanceScale * ldaDistance)
       links.push({
         source: i,
         target: j,
-        distance: (distanceScale * distance) + iR + jR
+        distance
       })
     }
   }
@@ -397,7 +528,7 @@ function makeClusterNodeLinks (nodes) {
  *   Links between subcluster nodes.
  */
 function makeSubclusterNodeLinks (nodes) {
-  const distanceScale = config.subclusterDistanceScale
+  const { distanceScale } = config.subclusterArrangement
   const links = []
   for (let i = 0; i < nodes.length; ++i) {
     const {
@@ -413,11 +544,12 @@ function makeSubclusterNodeLinks (nodes) {
       } = nodes[j]
       const dX = jX - iX
       const dY = jY - iY
-      const distance = Math.sqrt((dX * dX) + (dY * dY))
+      const ldaDistance = Math.sqrt((dX * dX) + (dY * dY))
+      const distance = iR + jR + (distanceScale * ldaDistance)
       links.push({
         source: i,
         target: j,
-        distance: (distanceScale * distance) + iR + jR
+        distance
       })
     }
   }
@@ -626,8 +758,13 @@ function renderIslandContours (clusters) {
  *   - `contours`: {array} estimated island contours.
  */
 function estimateIslandContours (subclusters) {
-  const clusterR =
-    (0.5 * getBoundingSquareSize(subclusters)) + config.islandContourMargin
+  const {
+    margin,
+    bandwidth,
+    thresholds,
+    numContours
+  } = config.islandContourEstimator
+  const clusterR = (0.5 * getBoundingSquareSize(subclusters)) + margin
   const domain = [-clusterR, clusterR]
   const estimatorSize = Math.round((clusterR / 3.0) * 600) // 600 for clusterR=3.0 empirically works well
   const estimatorProject = scaleLinear()
@@ -657,13 +794,13 @@ function estimateIslandContours (subclusters) {
     .size([estimatorSize, estimatorSize])
     .x(d => d.x)
     .y(d => d.y)
-    .bandwidth(45) // empirical value
-    .thresholds(25) // empirical value
+    .bandwidth(bandwidth) // empirical value
+    .thresholds(thresholds) // empirical value
   const contours = densityEstimator(projectedPapers)
   return {
     domain,
     estimatorSize,
-    contours: contours.slice(0, 2) // leaves outmost two contours
+    contours: contours.slice(0, numContours) // leaves outmost contours
   }
 }
 
@@ -763,6 +900,8 @@ function forceBoundingBoxCenter () {
     const cX = minX + (0.5 * (maxX - minX))
     const cY = minY + (0.5 * (maxY - minY))
     _nodes.forEach(node => {
+      node.x0 -= cX
+      node.y0 -= cY
       node.x -= cX
       node.y -= cY
     })
