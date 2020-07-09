@@ -3,24 +3,28 @@
  */
 
 import { program } from 'commander'
-import { scaleLinear as d3ScaleLinear } from 'd3-scale'
+import {
+  extent as d3Extent,
+  merge as d3Merge
+} from 'd3-array'
+import {
+  scaleLinear as d3ScaleLinear
+} from 'd3-scale'
 
 import {
   loadJson,
   saveJson
 } from './data'
 
+const RADIAN_TO_DEGREE = 180.0 / Math.PI
+
 program
-  .name('web-mercator')
+  .name('wgs84')
   .version(process.env.npm_package_version)
   .option(
-    '--x-scale <lon>',
-    'Scale along the x-axis to project a landform coordinate to Web Mercator coordinate',
-    1)
-  .option(
-    '--y-scale <lat>',
-    'Scale along the y-axis to project a landform coordinate to Web Mercator coordinate',
-    1)
+    '--world-coverage <num>',
+    'How much of the world is coverted by a landform. 0 to 1 (whole world).',
+    0.2)
   .arguments('<in> <out>')
   .action(run)
 program.parse(process.argv)
@@ -29,11 +33,13 @@ function run (inPath, outPath) {
   console.log(`loading: ${inPath}`)
   loadJson(inPath)
     .then(landform => {
-      console.log('scaling landform')
-      const projection = initializeScaleProjection(
-        program.xScale,
-        program.yScale)
+      console.log('projecting landform')
+      const projection = initializeProjection()
       return projectLandform(landform, projection)
+    })
+    .then(landform => {
+      console.log('applying web mercator calibration')
+      return doWebMercatorCalibration(landform, program.worldCoverage)
     })
     .then(landform => {
       console.log('converting landform into GeoJSON')
@@ -46,13 +52,8 @@ function run (inPath, outPath) {
     .catch(err => console.error(err))
 }
 
-function initializeScaleProjection (xScale, yScale) {
-  const _projectX = d3ScaleLinear()
-    .domain([-1, 1])
-    .range([-xScale, xScale])
-  const _projectY = d3ScaleLinear()
-    .domain([-1, 1])
-    .range([-yScale, yScale])
+/** Initializes a one to one projection. */
+function initializeProjection () {
   class Projection {
     constructor (offsetX, offsetY) {
       this.offsetX = offsetX
@@ -60,11 +61,11 @@ function initializeScaleProjection (xScale, yScale) {
     }
 
     projectX (x) {
-      return _projectX(x + this.offsetX)
+      return x + this.offsetX
     }
 
     projectY (y) {
-      return _projectY(y + this.offsetY)
+      return y + this.offsetY
     }
 
     translate (dX, dY) {
@@ -155,6 +156,127 @@ function projectIslandContours (islandContours, projection) {
       }
     })
   }
+}
+
+function doWebMercatorCalibration (landform, worldCoverage) {
+  const {
+    width,
+    height
+  } = calculateBoundingBoxOfLandform(landform)
+  const mapSize = Math.max(width, height)
+  const worldSize = 2.0 * Math.PI
+  const scale = (worldSize * worldCoverage) / mapSize
+  return landform.map(cluster => {
+    return doWebMercatorCalibrationOnCluster(cluster, scale)
+  })
+}
+
+function calculateBoundingBoxOfLandform (landform) {
+  const allPoints = d3Merge(landform.map(cluster => {
+    return d3Merge(cluster.islandContours.contours.map(contour => {
+      return d3Merge(contour.coordinates.map(polygon => {
+        return d3Merge(polygon)
+      }))
+    }))
+  }))
+  const xExtent = d3Extent(allPoints, p => p[0])
+  const yExtent = d3Extent(allPoints, p => p[1])
+  return {
+    width: xExtent[1] - xExtent[0],
+    height: yExtent[1] - yExtent[0]
+  }
+}
+
+function doWebMercatorCalibrationOnCluster (cluster, scale) {
+  return {
+    ...cluster,
+    x: webMercatorXToLongitude(scale * cluster.x),
+    y: webMercatorYToLatitude(scale * cluster.y),
+    subclusters: cluster.subclusters.map(subcluster => {
+      return doWebMercatorCalibrationOnSubcluster(subcluster, scale)
+    }),
+    islandContours: doWebMercatorCalibrationOnIslandContours(
+      cluster.islandContours,
+      scale)
+  }
+}
+
+function doWebMercatorCalibrationOnSubcluster (subcluster, scale) {
+  return {
+    ...subcluster,
+    x: webMercatorXToLongitude(scale * subcluster.x),
+    y: webMercatorYToLatitude(scale * subcluster.y),
+    papers: subcluster.papers.map(paper => {
+      return doWebMercatorCalibrationOnPaper(paper, scale)
+    })
+  }
+}
+
+function doWebMercatorCalibrationOnPaper (paper, scale) {
+  return {
+    ...paper,
+    x: webMercatorXToLongitude(scale * paper.x),
+    y: webMercatorYToLatitude(scale * paper.y)
+  }
+}
+
+function doWebMercatorCalibrationOnIslandContours (islandContours, scale) {
+  return {
+    ...islandContours,
+    contours: islandContours.contours.map(contour => {
+      return {
+        ...contour,
+        coordinates: contour.coordinates.map(polygon => {
+          return polygon.map(ring => {
+            return ring.map(([x, y]) => {
+              return [
+                webMercatorXToLongitude(scale * x),
+                webMercatorYToLatitude(scale * y)
+              ]
+            })
+          })
+        })
+      }
+    })
+  }
+}
+
+/**
+ * Converts a given x coordinate value in Web Mercator to longitude.
+ *
+ * @function webMercatorXToLongitude
+ *
+ * @param {number} x
+ *
+ *   X coordinate value in Web Mercator.
+ *   Domain is [-2π, 2π].
+ *
+ * @return {number}
+ *
+ *   Longitude corresponding to `x`.
+ *   Range is [-180, 180].
+ */
+function webMercatorXToLongitude (x) {
+  return RADIAN_TO_DEGREE * x
+}
+
+/**
+ * Converts a given y coordinate value in Web Mercator to latitude.
+ *
+ * @function webMercatorYToLatitude
+ *
+ * @param {number} y
+ *
+ *   Y coordinate value in Web Mercator.
+ *   Domain is [-2π, 2π].
+ *
+ * @return {number}
+ *
+ *   Latitude corresponding to `y`.
+ *   Range is approximately [-85, 85].
+ */
+function webMercatorYToLatitude (y) {
+  return (RADIAN_TO_DEGREE * 2.0 * Math.atan(Math.exp(y))) - 90.0
 }
 
 function convertToGeoJson (landform) {
