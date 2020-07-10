@@ -25,6 +25,10 @@ program
     '--world-coverage <num>',
     'How much of the world is coverted by a landform. 0 to 1 (whole world).',
     0.2)
+  .option(
+    '--type <type>',
+    'Output type. islands or papers',
+    'islands')
   .arguments('<in> <out>')
   .action(run)
 program.parse(process.argv)
@@ -42,8 +46,13 @@ function run (inPath, outPath) {
       return doWebMercatorCalibration(landform, program.worldCoverage)
     })
     .then(landform => {
-      console.log('converting landform into GeoJSON')
-      return convertToGeoJson(landform)
+      switch (program.type) {
+        case 'islands':
+          console.log('converting islands into GeoJSON')
+          return convertIslandsToGeoJson(landform)
+        default:
+          throw new Error(`unknown output type: ${program.type}`)
+      }
     })
     .then(geoJson => {
       console.log('saving GeoJSON')
@@ -92,7 +101,7 @@ function projectCluster (cluster, projection) {
     subclusters: cluster.subclusters.map(subcluster => {
       return projectSubcluster(subcluster, clusterProjection)
     }),
-    islandContours: projectIslandContours(
+    islandContours: projectContours(
       cluster.islandContours,
       clusterProjection)
   }
@@ -101,14 +110,17 @@ function projectCluster (cluster, projection) {
 function projectSubcluster (subcluster, projection) {
   const newX = projection.projectX(subcluster.x)
   const newY = projection.projectY(subcluster.y)
-  const paperProjection = projection.translate(subcluster.x, subcluster.y)
+  const subclusterProjection = projection.translate(subcluster.x, subcluster.y)
   return {
     ...subcluster,
     x: newX,
     y: newY,
     papers: subcluster.papers.map(paper => {
-      return projectPaper(paper, paperProjection)
-    })
+      return projectPaper(paper, subclusterProjection)
+    }),
+    densityContours: projectContours(
+      subcluster.densityContours,
+      subclusterProjection)
   }
 }
 
@@ -122,12 +134,12 @@ function projectPaper (paper, projection) {
   }
 }
 
-function projectIslandContours (islandContours, projection) {
+function projectContours (contoursContainer, projection) {
   const {
     contours,
     domain,
     estimatorSize
-  } = islandContours
+  } = contoursContainer
   const minX = projection.projectX(domain[0])
   const maxX = projection.projectX(domain[1])
   const minY = projection.projectY(domain[0])
@@ -139,7 +151,7 @@ function projectIslandContours (islandContours, projection) {
     .domain([0, estimatorSize])
     .range([minY, maxY])
   return {
-    ...islandContours,
+    ...contoursContainer,
     contours: contours.map(contour => {
       return {
         ...contour,
@@ -279,7 +291,7 @@ function webMercatorYToLatitude (y) {
   return (RADIAN_TO_DEGREE * 2.0 * Math.atan(Math.exp(y))) - 90.0
 }
 
-function convertToGeoJson (landform) {
+function convertIslandsToGeoJson (landform) {
   return {
     type: 'FeatureCollection',
     features: landform.map(cluster => {
