@@ -23,7 +23,7 @@ program
   .version(process.env.npm_package_version)
   .option(
     '--world-coverage <num>',
-    'How much of the world is coverted by a landform. 0 to 1 (whole world).',
+    'How much of the world is coverted by a landform. 0 to 1 (whole world)',
     0.2)
   .option(
     '--type <type>',
@@ -50,6 +50,9 @@ function run (inPath, outPath) {
         case 'islands':
           console.log('converting islands into GeoJSON')
           return convertIslandsToGeoJson(landform)
+        case 'papers':
+          console.log('converting papers into GeoJSON')
+          return convertPapersToGeoJson(landform)
         default:
           throw new Error(`unknown output type: ${program.type}`)
       }
@@ -299,6 +302,31 @@ function convertIslandsToGeoJson (landform) {
         type: 'Feature',
         geometry: cluster.islandContours.contours[0],
         properties: {}
+      }
+    })
+  }
+}
+
+function convertPapersToGeoJson (landform) {
+  // flattens paper arrays
+  const papers = d3Merge(landform.map(cluster => {
+    return d3Merge(cluster.subclusters.map(s => s.papers))
+  }))
+  return {
+    type: 'FeatureCollection',
+    features: papers.map(paper => {
+      return {
+        type: 'Feature',
+        geometry: {
+          type: 'Point',
+          coordinates: [
+            paper.x,
+            paper.y
+          ]
+        },
+        properties: {
+          paperId: paper.paper_id
+        }
       }
     })
   }
