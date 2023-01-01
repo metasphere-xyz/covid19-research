@@ -32,7 +32,7 @@
     "d3-force": "^2.0.1",
     "d3-polygon": "^1.0.6",
     "d3-scale": "^3.2.1",
-    "webpack": "^4.43.0",
-    "webpack-cli": "^3.3.11"
+    "webpack": "^5.75.0",
+    "webpack-cli": "^5.0.1"
   }
 }
